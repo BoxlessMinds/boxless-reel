@@ -20,7 +20,7 @@ dependencies = [
     # Auth dependencies
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
-    "bcrypt>=4.0.0,<4.1.0",  # Pin bcrypt for passlib compatibility
+    "bcrypt>=4.0.0,<5.1.0",  # Pin bcrypt for passlib compatibility
     "python-multipart>=0.0.6",
     "email-validator>=2.3.0",
     "openai>=1.0.0",
