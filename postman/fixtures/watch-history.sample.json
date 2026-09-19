@@ -1,0 +1,47 @@
+[
+  {
+    "header": "YouTube",
+    "title": "Watched Rick Astley - Never Gonna Give You Up (Official Music Video)",
+    "titleUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "subtitles": [
+      {
+        "name": "Rick Astley"
+      }
+    ],
+    "time": "2024-11-02T18:21:07.412Z",
+    "products": [
+      "YouTube"
+    ],
+    "activityControls": [
+      "YouTube watch history"
+    ]
+  },
+  {
+    "header": "YouTube",
+    "title": "Watched Me at the zoo",
+    "titleUrl": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+    "subtitles": [
+      {
+        "name": "jawed"
+      }
+    ],
+    "time": "2025-06-14T09:05:44.120Z",
+    "products": [
+      "YouTube"
+    ],
+    "activityControls": [
+      "YouTube watch history"
+    ]
+  },
+  {
+    "header": "YouTube",
+    "title": "Watched a video that has been removed",
+    "time": "2024-03-01T12:00:00.000Z",
+    "products": [
+      "YouTube"
+    ],
+    "activityControls": [
+      "YouTube watch history"
+    ]
+  }
+]

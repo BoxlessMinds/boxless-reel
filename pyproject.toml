@@ -1,0 +1,74 @@
+[project]
+name = "yt-transcript-service"
+version = "0.1.0"
+description = "RESTful API for extracting, storing, and managing YouTube video transcripts"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "sqlalchemy>=2.0.0",
+    "youtube-transcript-api>=0.6.0",
+    "yt-dlp>=2026.8.19",
+    "pydantic-settings>=2.0.0",
+    # Agent framework dependencies
+    "agno>=1.1.0",
+    "lancedb>=0.6.0",
+    "pandas>=2.3.3",
+    "anthropic>=0.75.0",
+    "cryptography>=46.0.3",
+    # Auth dependencies
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt>=4.0.0,<4.1.0",  # Pin bcrypt for passlib compatibility
+    "python-multipart>=0.0.6",
+    "email-validator>=2.3.0",
+    "openai>=1.0.0",
+    "tavily-python>=0.7.19",
+    # Document processing dependencies
+    "pypdf>=4.0",
+    "python-docx>=1.1",
+    "google-api-python-client>=2.200.0",
+    "google-auth>=2.57.1",
+    "google-auth-oauthlib>=1.4.1",
+    "tenacity>=9.1.4",
+    "tzdata>=2025.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.26.0",
+]
+# LLM provider optional dependencies
+openai = ["openai>=1.0.0"]
+anthropic = ["anthropic>=0.30.0"]
+# Convenience group for all agent features
+agents = [
+    "openai>=1.0.0",
+    "anthropic>=0.30.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests as integration tests (require API keys)",
+]
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

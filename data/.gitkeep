@@ -1,0 +1,2 @@
+# This directory stores LanceDB vector database files
+# The actual data files are gitignored

@@ -1,0 +1,3876 @@
+{
+  "info": {
+    "name": "transcript-api",
+    "description": "Every endpoint of the YouTube Transcript API (FastAPI): auth, invitations,\nadmin, transcripts, agent sessions, documents, settings, cross-chat, and the\nplaylist manager (YouTube auth, playlists, watch history, plans).\n\n1. Import this collection **and** `transcript-api.postman_environment.json`,\n   then select the environment.\n2. Set `email` / `password` to a local account (an admin for the Admin folder).\n3. Send **Auth -> Login** -- `access_token` and `refresh_token` fill in\n   automatically.\n\nRequests marked **[LIVE]** call YouTube/Google or a paid LLM API and are\nskipped unless `allow_live` is `\"true\"`. Requests whose ids aren't set yet\nare skipped too. Full guide: `postman/README.md`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Tolerate a base_url typed with a trailing slash (\"http://host:5050/\"). Every",
+          "// request is \"{{base_url}}/api/...\", so the slash would produce \"//api/...\" and",
+          "// FastAPI would answer {\"detail\": \"Not Found\"} to everything. A local variable",
+          "// overrides the environment's value for this request only.",
+          "const baseUrl = pm.variables.get('base_url');",
+          "if (baseUrl && /\\/+$/.test(baseUrl)) {",
+          "    pm.variables.set('base_url', baseUrl.replace(/\\/+$/, ''));",
+          "}",
+          "",
+          "// Chaining guard (runs before every request).",
+          "// A request that needs an id captured by an earlier request is SKIPPED while",
+          "// that id is still empty, instead of being sent with a blank path segment --",
+          "// which can fall through to the SPA catch-all in src/main.py and come back",
+          "// 200 with a null body. See \"Chaining and skipped requests\" in postman/README.md.",
+          "const CHAIN_VARS = [\"transcript_id\", \"video_id\", \"session_id\", \"second_session_id\", \"document_id\", \"cross_chat_session_id\", \"invitation_id\", \"invitation_token\", \"user_id\", \"google_oauth_state\", \"google_auth_code\", \"playlist_id\", \"target_playlist_id\", \"youtube_playlist_id\", \"watch_history_import_id\", \"plan_id\"];",
+          "const referenced = new Set();",
+          "function scan(text) {",
+          "    String(text || '').replace(/\\{\\{\\s*([\\w.-]+)\\s*\\}\\}/g, function (match, name) {",
+          "        referenced.add(name);",
+          "        return match;",
+          "    });",
+          "}",
+          "pm.request.url.path.forEach(scan);",
+          "pm.request.url.query.all().forEach(function (param) {",
+          "    if (!param.disabled) {",
+          "        scan(param.value);",
+          "    }",
+          "});",
+          "if (pm.request.body && pm.request.body.mode === 'raw') {",
+          "    scan(pm.request.body.raw);",
+          "}",
+          "const missing = CHAIN_VARS.filter(function (name) {",
+          "    return referenced.has(name) && !pm.variables.get(name);",
+          "});",
+          "if (missing.length > 0) {",
+          "    console.log('Skipped \"' + pm.info.requestName + '\": ' + missing.join(', ') +",
+          "        ' not set yet -- the request description says which request sets it.');",
+          "    pm.execution.skipRequest();",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Every API route answers with JSON. A 2xx with a null body means the request",
+          "// missed its route and was answered by the SPA catch-all in src/main.py.",
+          "if (pm.response.code < 300 || pm.response.code >= 400) {",
+          "    pm.test('Response body is JSON, not the SPA catch-all', function () {",
+          "        pm.expect(pm.response.json(), 'response body').to.not.equal(null);",
+          "    });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "description": "Liveness probe. Public -- no token needed. Good first request to confirm `base_url`.",
+      "item": [
+        {
+          "name": "Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Reports healthy', function () {",
+                  "    pm.expect(pm.response.json().status).to.eql('healthy');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "`GET /health` -- returns `{\"status\": \"healthy\"}`. Public.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "description": "**Run Login first.** Its test script copies `access_token` and `refresh_token`\nfrom the response into the active environment; every other request\nauthenticates with the collection-level `Bearer {{access_token}}`.\n\n- Access tokens last 15 minutes by default (`ACCESS_TOKEN_EXPIRE_MINUTES`).\n  When requests start returning 401, send **Refresh Tokens** (rotates *both*\n  tokens) or **Login** again.\n- All auth bodies are JSON, not OAuth2 form-data.\n- Registration is invite-only by default, so this folder mints an invitation\n  (**Invite a New User**) right before **Register**.\n- **Logout** is last: it revokes `refresh_token`. The access token stays valid\n  until it expires, so later folders in the same run still authenticate.",
+      "item": [
+        {
+          "name": "Get Registration Mode",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Returns the registration mode flag', function () {",
+                  "    pm.expect(pm.response.json().require_invitation).to.be.a('boolean');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/auth/registration-mode",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "registration-mode"
+              ]
+            },
+            "description": "`GET /api/auth/registration-mode` -- public. `require_invitation: true`\nmeans Register needs an invitation token.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a bearer token pair', function () {",
+                  "    pm.expect(json.access_token, 'access_token').to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.refresh_token, 'refresh_token').to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.token_type).to.eql('bearer');",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    // Every other request authenticates with Bearer {{access_token}}.",
+                  "    pm.environment.set('access_token', json.access_token);",
+                  "    pm.environment.set('refresh_token', json.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "`POST /api/auth/login` -- JSON `{email, password}` from the environment's\n`email` / `password` variables.\n\n**Sets:** `access_token`, `refresh_token` (test script). Nothing else needs\ncopying by hand.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"{{email}}\",\n    \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Tokens",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('refresh_token_before_rotation', pm.environment.get('refresh_token') || '');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a new bearer token pair', function () {",
+                  "    pm.expect(json.access_token, 'access_token').to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.refresh_token, 'refresh_token').to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.token_type).to.eql('bearer');",
+                  "});",
+                  "pm.test('Rotates the refresh token', function () {",
+                  "    pm.expect(json.refresh_token).to.not.eql(pm.variables.get('refresh_token_before_rotation'));",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    pm.environment.set('access_token', json.access_token);",
+                  "    pm.environment.set('refresh_token', json.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/refresh",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "`POST /api/auth/refresh` -- exchanges `refresh_token` for a new pair.\n**Both** tokens rotate; the old refresh token stops working.\n\n**Needs:** `refresh_token` (Login). **Sets:** `access_token`, `refresh_token`.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"refresh_token\": \"{{refresh_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Current User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the logged-in user', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.email.toLowerCase()).to.eql(String(pm.environment.get('email')).toLowerCase());",
+                  "    pm.expect(json.role).to.be.oneOf(['admin', 'user']);",
+                  "    pm.expect(json.is_active).to.eql(true);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    pm.environment.set('display_name', json.display_name);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/auth/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "`GET /api/auth/me` -- the logged-in user's profile.\n\n**Sets:** `display_name` (so Update Current User can write it back unchanged)."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Current User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Returns the updated profile', function () {",
+                  "    pm.expect(pm.response.json().display_name).to.eql(pm.environment.get('display_name'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "`PUT /api/auth/me` -- partial profile update. The body writes back the\n`display_name` that Get Current User just read, so running the folder\ndoesn't rename you; edit the body to change it.\n\n**Changing the password:** send\n`{\"current_password\": \"...\", \"new_password\": \"at-least-8-chars\"}`.\nThat revokes *every* refresh token for the account (auth.py), so do it\nlast and then Login again. It is deliberately left out of this body.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"display_name\": \"{{display_name}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Invite a New User (setup for Register)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A fresh address each run, so re-running never collides with an existing",
+                  "// invitation or user. Register (Auth) reads the same variable.",
+                  "pm.environment.set('invitee_email', 'postman-invitee-' + Date.now() + '@example.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a pending invitation with its token', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.token).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.status).to.eql('pending');",
+                  "    pm.expect(json.email.toLowerCase()).to.eql(pm.environment.get('invitee_email').toLowerCase());",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('invitation_id', json.id);",
+                  "    pm.environment.set('invitation_token', json.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/invitations",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "invitations"
+              ]
+            },
+            "description": "`POST /api/invitations` -- same endpoint as Invitations -> Create Invitation.\nRegistration is invite-only by default, so this mints the invitation that\nRegister consumes. The pre-request script picks a fresh\n`postman-invitee-<timestamp>@example.com` address each run.\n\n**Sets:** `invitee_email`, `invitation_id`, `invitation_token`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"{{invitee_email}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Creates a regular user for the invited email', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.email.toLowerCase()).to.eql(pm.environment.get('invitee_email').toLowerCase());",
+                  "    pm.expect(json.role).to.eql('user');",
+                  "    pm.expect(json.is_active).to.eql(true);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('user_id', json.id);",
+                  "    // The invitation is spent (accepted); don't leave it for Revoke/Clear.",
+                  "    pm.environment.set('invitation_id', '');",
+                  "    pm.environment.set('invitation_token', '');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            },
+            "description": "`POST /api/auth/register` -- creates a `role: \"user\"` account. Returns 201.\n\n`token` is required while registration is invite-only (the default) and\n`email` must match the invitation. With open registration (Admin -> Update\nRegistration Mode) the token can be omitted. Register never creates an\nadmin -- see \"Seeding a first account\" in postman/README.md.\n\n**Needs:** `invitation_token`, `invitee_email` (Invite a New User).\n**Sets:** `user_id` (used by Admin -> Update/Delete User); clears the spent\n`invitation_id` / `invitation_token`.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"token\": \"{{invitation_token}}\",\n    \"email\": \"{{invitee_email}}\",\n    \"password\": \"{{invitee_password}}\",\n    \"display_name\": \"Postman Invitee\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the success message', function () {",
+                  "    pm.expect(json.message).to.eql('Logged out successfully');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/logout",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "`POST /api/auth/logout` -- revokes `refresh_token`. No bearer token needed.\nLast in the folder on purpose: afterwards Refresh fails until you Login\nagain. The current access token keeps working until it expires.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"refresh_token\": \"{{refresh_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Invitations",
+      "description": "Create -> list -> validate -> revoke -> clear. Any logged-in user can invite\n(non-admins are capped at `MAX_PENDING_INVITATIONS_PER_USER`, default 5 pending).\n\n**Create Invitation** picks a fresh `postman-invitee-<timestamp>@example.com`\neach run and sets `invitation_id` / `invitation_token` for the rest of the folder.",
+      "item": [
+        {
+          "name": "Create Invitation",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A fresh address each run, so re-running never collides with an existing",
+                  "// invitation or user. Register (Auth) reads the same variable.",
+                  "pm.environment.set('invitee_email', 'postman-invitee-' + Date.now() + '@example.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a pending invitation with its token', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.token).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.status).to.eql('pending');",
+                  "    pm.expect(json.email.toLowerCase()).to.eql(pm.environment.get('invitee_email').toLowerCase());",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('invitation_id', json.id);",
+                  "    pm.environment.set('invitation_token', json.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/invitations",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "invitations"
+              ]
+            },
+            "description": "`POST /api/invitations` -- returns 201 with the invitation and its token.\n\n**Sets:** `invitee_email` (pre-request), `invitation_id`, `invitation_token`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"{{invitee_email}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List My Invitations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Lists invitations sent by the current user', function () {",
+                  "    pm.expect(json.invitations).to.be.an('array');",
+                  "    pm.expect(json.total).to.be.a('number');",
+                  "});",
+                  "const invitationId = pm.environment.get('invitation_id');",
+                  "if (invitationId) {",
+                  "    pm.test('Includes the invitation just created, still pending', function () {",
+                  "        const created = json.invitations.find(function (inv) { return inv.id === invitationId; });",
+                  "        pm.expect(created, 'invitation ' + invitationId).to.be.an('object');",
+                  "        pm.expect(created.status).to.eql('pending');",
+                  "        pm.expect(created.token).to.be.a('string').that.is.not.empty;",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/invitations",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "invitations"
+              ]
+            },
+            "description": "`GET /api/invitations` -- invitations sent by the current user, newest\nfirst. Tokens are included only while an invitation is pending."
+          },
+          "response": []
+        },
+        {
+          "name": "Validate Invitation Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Token is valid for the invited email', function () {",
+                  "    pm.expect(json.valid).to.eql(true);",
+                  "    pm.expect(json.email.toLowerCase()).to.eql(pm.environment.get('invitee_email').toLowerCase());",
+                  "    pm.expect(json.expires_at).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/invitations/validate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "invitations",
+                "validate"
+              ]
+            },
+            "description": "`POST /api/invitations/validate` -- public; the registration form calls it\nbefore showing the sign-up fields. Token goes in the body, not the URL.\n404 if the token is unknown, expired, or no longer pending.\n\n**Needs:** `invitation_token` (Create Invitation).",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"token\": \"{{invitation_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Revoke Invitation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the success message', function () {",
+                  "    pm.expect(json.message).to.eql('Invitation revoked successfully');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/invitations/{{invitation_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "invitations",
+                "{{invitation_id}}"
+              ]
+            },
+            "description": "`DELETE /api/invitations/{invitation_id}` -- revokes a *pending*\ninvitation. Owners can revoke their own; admins can revoke any.\n\n**Needs:** `invitation_id` (Create Invitation)."
+          },
+          "response": []
+        },
+        {
+          "name": "Clear Invitation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the success message', function () {",
+                  "    pm.expect(json.message).to.eql('Invitation cleared successfully');",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    // Gone now: clear the id so requests that need it skip instead of 404ing.",
+                  "    pm.environment.set('invitation_id', '');",
+                  "    pm.environment.set('invitation_token', '');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/invitations/{{invitation_id}}/clear",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "invitations",
+                "{{invitation_id}}",
+                "clear"
+              ]
+            },
+            "description": "`DELETE /api/invitations/{invitation_id}/clear` -- permanently removes a\nrevoked, expired or accepted invitation from history (use Revoke for\npending ones).\n\n**Needs:** `invitation_id`. **Clears:** `invitation_id`, `invitation_token`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "description": "Admin-only (403 for `role: \"user\"`). The environment's `email` / `password`\nmust belong to an admin -- see \"Seeding a first account\" in postman/README.md.\n\nUpdate User and Delete User act on `user_id`, which Auth -> Register sets to\nthe throwaway invitee it just created -- never on an existing account.",
+      "item": [
+        {
+          "name": "Get Registration Mode (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the registration mode flag', function () {",
+                  "    pm.expect(json.require_invitation).to.be.a('boolean');",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    pm.environment.set('require_invitation', String(json.require_invitation));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/admin/settings/registration-mode",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "settings",
+                "registration-mode"
+              ]
+            },
+            "description": "`GET /api/admin/settings/registration-mode` -- admin view of the flag.\n\n**Sets:** `require_invitation` (so Update Registration Mode writes the\ncurrent value back unchanged)."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Registration Mode",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Echoes the requested mode', function () {",
+                  "    pm.expect(pm.response.json().require_invitation).to.eql(pm.environment.get('require_invitation') === 'true');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/settings/registration-mode",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "settings",
+                "registration-mode"
+              ]
+            },
+            "description": "`PUT /api/admin/settings/registration-mode` -- `true` = invite-only,\n`false` = open registration. Stored in the database, which overrides the\n`REQUIRE_INVITATION_CODE` environment variable.\n\nThe body writes back the value Get Registration Mode just read\n(`require_invitation`, default `true`), so running the folder changes\nnothing. Set the variable to `false` to open registration.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"require_invitation\": {{require_invitation}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Bulk Create Invitations",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const stamp = Date.now();",
+                  "pm.environment.set('bulk_email_1', 'postman-bulk-a-' + stamp + '@example.com');",
+                  "pm.environment.set('bulk_email_2', 'postman-bulk-b-' + stamp + '@example.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Creates both invitations', function () {",
+                  "    const created = json.created.map(function (e) { return e.toLowerCase(); });",
+                  "    pm.expect(created).to.include(pm.environment.get('bulk_email_1').toLowerCase());",
+                  "    pm.expect(created).to.include(pm.environment.get('bulk_email_2').toLowerCase());",
+                  "    pm.expect(json.failed).to.be.an('array').that.is.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/invitations/bulk",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "invitations",
+                "bulk"
+              ]
+            },
+            "description": "`POST /api/admin/invitations/bulk` -- up to 50 emails; per-email failures\ncome back in `failed` rather than failing the call. The pre-request script\ngenerates two fresh `postman-bulk-*@example.com` addresses. These are real\npending invitations -- revoke them from the UI if you run this against a\ndatabase you care about.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"emails\": [\n        \"{{bulk_email_1}}\",\n        \"{{bulk_email_2}}\"\n    ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List All Invitations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Lists invitations without tokens', function () {",
+                  "    pm.expect(json.invitations).to.be.an('array');",
+                  "    pm.expect(json.total).to.be.a('number');",
+                  "    json.invitations.forEach(function (inv) {",
+                  "        pm.expect(inv.token, 'token for ' + inv.email).to.equal(null);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/admin/invitations",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "invitations"
+              ]
+            },
+            "description": "`GET /api/admin/invitations` -- every invitation in the system. Tokens are\nnever exposed in this view."
+          },
+          "response": []
+        },
+        {
+          "name": "List Users",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a page of users', function () {",
+                  "    pm.expect(json.users).to.be.an('array');",
+                  "    pm.expect(json.total).to.be.a('number');",
+                  "    pm.expect(json.page).to.eql(1);",
+                  "    pm.expect(json.page_size).to.eql(20);",
+                  "    pm.expect(json.total_pages).to.be.a('number');",
+                  "});",
+                  "const userId = pm.environment.get('user_id');",
+                  "if (userId) {",
+                  "    pm.test('Includes the user Register just created', function () {",
+                  "        pm.expect(json.users.map(function (u) { return u.id; })).to.include(userId);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users?page=1&page_size=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "example.com",
+                  "description": "Substring match on email and display name",
+                  "disabled": true
+                },
+                {
+                  "key": "role",
+                  "value": "user",
+                  "description": "admin | user",
+                  "disabled": true
+                },
+                {
+                  "key": "is_active",
+                  "value": "true",
+                  "description": "Filter by active status",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "1-indexed"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20",
+                  "description": "1-100"
+                }
+              ]
+            },
+            "description": "`GET /api/admin/users` -- paginated, newest first. Optional filters are\npresent but disabled."
+          },
+          "response": []
+        },
+        {
+          "name": "Update User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Applies the update to the right user', function () {",
+                  "    pm.expect(json.id).to.eql(pm.environment.get('user_id'));",
+                  "    pm.expect(json.is_active).to.eql(false);",
+                  "    pm.expect(json.role).to.eql('user');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users/{{user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "{{user_id}}"
+              ]
+            },
+            "description": "`PUT /api/admin/users/{user_id}` -- set `is_active` and/or `role`\n(`admin` | `user`). This example deactivates the invitee.\n\n**Needs:** `user_id` (Auth -> Register).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"is_active\": false,\n    \"role\": \"user\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the success message', function () {",
+                  "    pm.expect(json.message).to.eql('User deleted successfully');",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    // Gone now: clear the id so requests that need it skip instead of 404ing.",
+                  "    pm.environment.set('user_id', '');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users/{{user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "{{user_id}}"
+              ]
+            },
+            "description": "`DELETE /api/admin/users/{user_id}` -- admins can't delete themselves (400).\n\n**Needs:** `user_id` (Auth -> Register). **Clears:** `user_id`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Transcripts",
+      "description": "Extract -> list -> get -> delete. **Extract is LIVE** (YouTube, and by default\nOpenAI Whisper + embeddings), so it's skipped unless `allow_live` is `\"true\"`.\n\nGet and Delete need `transcript_id` -- set by Extract, or paste the id of a\ntranscript you already have. Delete clears it, which also skips the Agent,\nDocuments and Cross-Chat folders until you set it again.",
+      "item": [
+        {
+          "name": "[LIVE] Extract Transcript",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// LIVE: fetches captions from YouTube, may fall back to OpenAI Whisper, and indexes embeddings.",
+                  "// Skipped unless the environment variable allow_live is \"true\" (postman/README.md).",
+                  "if (pm.variables.get('allow_live') !== 'true') {",
+                  "    console.log('Skipped \"' + pm.info.requestName + '\": live request and allow_live is not \"true\".');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the extracted transcript', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.video_id).to.have.lengthOf(11);",
+                  "    pm.expect(json.transcript_text).to.be.a('string');",
+                  "    pm.expect(json.transcript_segments).to.be.an('array');",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('transcript_id', json.id);",
+                  "    pm.environment.set('video_id', json.video_id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/transcripts/extract",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "transcripts",
+                "extract"
+              ]
+            },
+            "description": "`POST /api/transcripts/extract` -- returns 201 with the full transcript.\nAccepts `watch?v=`, `youtu.be/` and `shorts/` URLs (extra params like `&t=`\nare fine). 409 if you already extracted this video; 404 if it has no\ntranscript or is unavailable.\n\n**LIVE** -- skipped unless `allow_live` is `\"true\"`.\n**Sets:** `transcript_id`, `video_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"youtube_url\": \"https://www.youtube.com/watch?v=dQw4w9WgXcQ\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Transcripts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a page of transcripts', function () {",
+                  "    pm.expect(json.items).to.be.an('array');",
+                  "    pm.expect(json.total).to.be.a('number');",
+                  "    pm.expect(json.page).to.eql(1);",
+                  "    pm.expect(json.page_size).to.eql(20);",
+                  "    pm.expect(json.total_pages).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/transcripts?page=1&page_size=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "transcripts"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "never gonna",
+                  "description": "Matches title and transcript text",
+                  "disabled": true
+                },
+                {
+                  "key": "language",
+                  "value": "en",
+                  "description": "Language code",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "2026-01-01T00:00:00",
+                  "description": "created_at >= (ISO 8601)",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "2026-12-31T23:59:59",
+                  "description": "created_at <= (ISO 8601)",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "1-indexed"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20",
+                  "description": "1-100"
+                }
+              ]
+            },
+            "description": "`GET /api/transcripts` -- the current user's transcripts (metadata only).\nFilters are present but disabled."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Transcript",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the requested transcript', function () {",
+                  "    pm.expect(json.id).to.eql(pm.environment.get('transcript_id'));",
+                  "    pm.expect(json.transcript_text).to.be.a('string');",
+                  "    pm.expect(json.transcript_segments).to.be.an('array');",
+                  "    pm.expect(json.language).to.be.a('string');",
+                  "});",
+                  "const videoId = pm.environment.get('video_id');",
+                  "if (videoId) {",
+                  "    pm.test('Matches the extracted video', function () {",
+                  "        pm.expect(json.video_id).to.eql(videoId);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/transcripts/{{transcript_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "transcripts",
+                "{{transcript_id}}"
+              ]
+            },
+            "description": "`GET /api/transcripts/{transcript_id}` -- full transcript with timestamped\nsegments.\n\n**Needs:** `transcript_id` (Extract Transcript, or set it by hand)."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Transcript",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the success message', function () {",
+                  "    pm.expect(json.message).to.eql('Transcript deleted successfully');",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    // Gone now: clear the id so requests that need it skip instead of 404ing.",
+                  "    pm.environment.set('transcript_id', '');",
+                  "    pm.environment.set('video_id', '');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/transcripts/{{transcript_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "transcripts",
+                "{{transcript_id}}"
+              ]
+            },
+            "description": "`DELETE /api/transcripts/{transcript_id}` -- also removes its agent sessions.\n\n**Needs:** `transcript_id`. **Clears:** `transcript_id`, `video_id`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Agent",
+      "description": "Chat with one transcript. **Needs `transcript_id`** pointing at an existing\ntranscript (Transcripts -> Extract, or paste one of yours).\n\nEverything that creates a session or asks a question is **LIVE**: sessions\nindex the transcript (OpenAI embeddings) and queries call the LLM (and Tavily\nweb search when enabled). Those requests are skipped unless `allow_live` is\n`\"true\"`; the requests that need their ids are then skipped too.\n\nThe two sessions also feed the Documents and Cross-Chat folders -- to use\nthem, run those folders *before* this folder's two Delete requests.",
+      "item": [
+        {
+          "name": "[LIVE] Create Session",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// LIVE: indexes the transcript with OpenAI embeddings if it isn't indexed yet.",
+                  "// Skipped unless the environment variable allow_live is \"true\" (postman/README.md).",
+                  "if (pm.variables.get('allow_live') !== 'true') {",
+                  "    console.log('Skipped \"' + pm.info.requestName + '\": live request and allow_live is not \"true\".');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Creates a session for the transcript', function () {",
+                  "    pm.expect(json.session_id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.transcript_id).to.eql(pm.environment.get('transcript_id'));",
+                  "    pm.expect(json.model_provider).to.be.oneOf(['anthropic', 'openai']);",
+                  "    pm.expect(json.query_count).to.eql(0);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('session_id', json.session_id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/transcripts/{{transcript_id}}/sessions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "transcripts",
+                "{{transcript_id}}",
+                "sessions"
+              ]
+            },
+            "description": "`POST /api/transcripts/{transcript_id}/sessions` -- returns 201.\n`model_provider` is `\"anthropic\"`, `\"openai\"`, or `null` for the configured\ndefault. 503 if no LLM key is configured.\n\n**LIVE.** **Needs:** `transcript_id`. **Sets:** `session_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"model_provider\": \"anthropic\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "[LIVE] Create Second Session",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// LIVE: indexes the transcript with OpenAI embeddings if it isn't indexed yet.",
+                  "// Skipped unless the environment variable allow_live is \"true\" (postman/README.md).",
+                  "if (pm.variables.get('allow_live') !== 'true') {",
+                  "    console.log('Skipped \"' + pm.info.requestName + '\": live request and allow_live is not \"true\".');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Creates a second session', function () {",
+                  "    pm.expect(json.session_id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.session_id).to.not.eql(pm.environment.get('session_id'));",
+                  "    pm.expect(json.transcript_id).to.eql(pm.environment.get('transcript_id'));",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('second_session_id', json.session_id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/transcripts/{{transcript_id}}/sessions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "transcripts",
+                "{{transcript_id}}",
+                "sessions"
+              ]
+            },
+            "description": "Same endpoint as Create Session, with `model_provider: null` (the configured\ndefault). Cross-Chat needs two sessions.\n\n**LIVE.** **Needs:** `transcript_id`. **Sets:** `second_session_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"model_provider\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "[LIVE] One-Shot Query",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// LIVE: calls the LLM (and Tavily web search when enabled); indexes embeddings if needed.",
+                  "// Skipped unless the environment variable allow_live is \"true\" (postman/README.md).",
+                  "if (pm.variables.get('allow_live') !== 'true') {",
+                  "    console.log('Skipped \"' + pm.info.requestName + '\": live request and allow_live is not \"true\".');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns an answer with citations', function () {",
+                  "    pm.expect(json.content).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.citations).to.be.an('array');",
+                  "    pm.expect(json.model_used).to.be.a('string');",
+                  "    pm.expect(json.transcript_results_used).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/transcripts/{{transcript_id}}/query",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "transcripts",
+                "{{transcript_id}}",
+                "query"
+              ],
+              "query": [
+                {
+                  "key": "model_provider",
+                  "value": "anthropic",
+                  "description": "anthropic | openai (optional)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "`POST /api/transcripts/{transcript_id}/query` -- a single question with no\npersistent session (`session_id` comes back empty).\n\n**LIVE.** **Needs:** `transcript_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"question\": \"What are the three main points of this video?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "[LIVE] Query Session",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// LIVE: calls the LLM (and Tavily web search when enabled).",
+                  "// Skipped unless the environment variable allow_live is \"true\" (postman/README.md).",
+                  "if (pm.variables.get('allow_live') !== 'true') {",
+                  "    console.log('Skipped \"' + pm.info.requestName + '\": live request and allow_live is not \"true\".');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Answers within the session', function () {",
+                  "    pm.expect(json.session_id).to.eql(pm.environment.get('session_id'));",
+                  "    pm.expect(json.content).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.citations).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{session_id}}/query",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{session_id}}",
+                "query"
+              ]
+            },
+            "description": "`POST /api/sessions/{session_id}/query` -- keeps conversation context, so\nfollow-ups can refer to earlier answers.\n\n**LIVE.** **Needs:** `session_id` (Create Session).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"question\": \"Summarize the first two minutes in three bullet points.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Sessions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the session list', function () {",
+                  "    pm.expect(json.items).to.be.an('array');",
+                  "    pm.expect(json.total).to.eql(json.items.length);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions"
+              ],
+              "query": [
+                {
+                  "key": "transcript_id",
+                  "value": "{{transcript_id}}",
+                  "description": "Only sessions for this transcript",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "`GET /api/sessions` -- the current user's sessions. Enable the\n`transcript_id` filter to narrow to one transcript."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the session with its history', function () {",
+                  "    pm.expect(json.session_id).to.eql(pm.environment.get('session_id'));",
+                  "    pm.expect(json.messages).to.be.an('array');",
+                  "    pm.expect(json.video_id).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{session_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{session_id}}"
+              ]
+            },
+            "description": "`GET /api/sessions/{session_id}` -- session details plus message history.\n\n**Needs:** `session_id` (Create Session)."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Second Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the success message', function () {",
+                  "    pm.expect(json.message).to.eql('Session deleted successfully');",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    // Gone now: clear the id so requests that need it skip instead of 404ing.",
+                  "    pm.environment.set('second_session_id', '');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{second_session_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{second_session_id}}"
+              ]
+            },
+            "description": "`DELETE /api/sessions/{session_id}` for the second session.\n\n**Needs:** `second_session_id`. **Clears:** `second_session_id`."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the success message', function () {",
+                  "    pm.expect(json.message).to.eql('Session deleted successfully');",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    // Gone now: clear the id so requests that need it skip instead of 404ing.",
+                  "    pm.environment.set('session_id', '');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{session_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{session_id}}"
+              ]
+            },
+            "description": "`DELETE /api/sessions/{session_id}`.\n\n**Needs:** `session_id`. **Clears:** `session_id`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Documents",
+      "description": "Upload, list and delete are **session-scoped** (`/api/sessions/{session_id}/documents`);\n`/api/documents` itself is read-only (list and get). Grouped here the way\nDOCUMENTATION/API_Reference.md groups them.\n\n**Needs `session_id`** (Agent -> Create Session). Upload is **LIVE** (it indexes\nthe file with OpenAI embeddings).\n\nUpload sends `postman/fixtures/sample-notes.md`. Newman resolves that path from\nthe directory you run it in (the repo root); in the Postman app, set Settings ->\nGeneral -> Working directory to the repo root, or re-pick the file.",
+      "item": [
+        {
+          "name": "[LIVE] Upload Session Document",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// LIVE: extracts the file's text and indexes it with OpenAI embeddings.",
+                  "// Skipped unless the environment variable allow_live is \"true\" (postman/README.md).",
+                  "if (pm.variables.get('allow_live') !== 'true') {",
+                  "    console.log('Skipped \"' + pm.info.requestName + '\": live request and allow_live is not \"true\".');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Stores the document on the session', function () {",
+                  "    pm.expect(json.document.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.document.session_id).to.eql(pm.environment.get('session_id'));",
+                  "    pm.expect(json.document.file_type).to.be.a('string');",
+                  "    pm.expect(json.message).to.eql('Document uploaded successfully');",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('document_id', json.document.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{session_id}}/documents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{session_id}}",
+                "documents"
+              ]
+            },
+            "description": "`POST /api/sessions/{session_id}/documents` -- multipart upload, field\n`file`. Returns 201. 400 for an unsupported type or a full session\n(5 documents), 413 if too large.\n\n**LIVE.** **Needs:** `session_id`. **Sets:** `document_id`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "postman/fixtures/sample-notes.md",
+                  "description": "PDF, DOCX, TXT or MD. 10 MB (PDF/DOCX) / 5 MB (TXT/MD); 5 per session."
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Session Documents",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Lists the session documents', function () {",
+                  "    pm.expect(json.session_id).to.eql(pm.environment.get('session_id'));",
+                  "    pm.expect(json.documents).to.be.an('array');",
+                  "    pm.expect(json.count).to.eql(json.documents.length);",
+                  "    pm.expect(json.max_documents).to.be.a('number');",
+                  "    pm.expect(json.can_add_more).to.be.a('boolean');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{session_id}}/documents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{session_id}}",
+                "documents"
+              ]
+            },
+            "description": "`GET /api/sessions/{session_id}/documents` -- documents on one session, with\nthe per-session cap.\n\n**Needs:** `session_id`."
+          },
+          "response": []
+        },
+        {
+          "name": "List All Documents",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a page of documents', function () {",
+                  "    pm.expect(json.items).to.be.an('array');",
+                  "    pm.expect(json.total).to.be.a('number');",
+                  "    pm.expect(json.skip).to.eql(0);",
+                  "    pm.expect(json.limit).to.eql(20);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/documents?skip=0&limit=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "documents"
+              ],
+              "query": [
+                {
+                  "key": "skip",
+                  "value": "0",
+                  "description": "Records to skip"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "1-100"
+                }
+              ]
+            },
+            "description": "`GET /api/documents` -- every document the current user owns, across\nsessions (uploads and auto-saved chat artifacts)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Document",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the requested document', function () {",
+                  "    pm.expect(json.id).to.eql(pm.environment.get('document_id'));",
+                  "    pm.expect(json.original_filename).to.be.a('string');",
+                  "    pm.expect(json.is_indexed).to.be.a('boolean');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/documents/{{document_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "{{document_id}}"
+              ]
+            },
+            "description": "`GET /api/documents/{document_id}` -- document metadata.\n\n**Needs:** `document_id` (Upload Session Document)."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Session Document",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the success message', function () {",
+                  "    pm.expect(json.message).to.eql('Document deleted successfully');",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    // Gone now: clear the id so requests that need it skip instead of 404ing.",
+                  "    pm.environment.set('document_id', '');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{session_id}}/documents/{{document_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{session_id}}",
+                "documents",
+                "{{document_id}}"
+              ]
+            },
+            "description": "`DELETE /api/sessions/{session_id}/documents/{document_id}`.\n\n**Needs:** `session_id`, `document_id`. **Clears:** `document_id`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Settings",
+      "description": "Per-user LLM settings. API key values are never returned -- only\n`*_api_key_configured` flags.",
+      "item": [
+        {
+          "name": "Get Settings",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns LLM settings without key values', function () {",
+                  "    pm.expect(json.default_provider).to.be.oneOf(['anthropic', 'openai']);",
+                  "    pm.expect(json.default_model).to.be.a('string');",
+                  "    pm.expect(json.available_models).to.be.an('array');",
+                  "    pm.expect(json.anthropic_api_key_configured).to.be.a('boolean');",
+                  "    pm.expect(json.openai_api_key_configured).to.be.a('boolean');",
+                  "    pm.expect(json).to.not.have.property('anthropic_api_key');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/settings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "settings"
+              ]
+            },
+            "description": "`GET /api/settings` -- effective settings for the current user\n(per-user value, else server default)."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Settings",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Applies the update', function () {",
+                  "    pm.expect(json.max_context_chunks).to.eql(10);",
+                  "    pm.expect(json.web_search_enabled).to.eql(true);",
+                  "    pm.expect(json.web_search_max_results).to.eql(5);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/settings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "settings"
+              ]
+            },
+            "description": "`PUT /api/settings` -- partial update; omitted fields are untouched. These\nvalues are the server defaults, but they are saved to *your* per-user\nsettings. Other fields: `default_provider`, `default_model`,\n`embedding_model`, `chunk_size`, `chunk_overlap`, and `anthropic_api_key`\n/ `openai_api_key` / `tavily_api_key` (empty string clears a key). Never\ncommit a real key into this body.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"max_context_chunks\": 10,\n    \"web_search_enabled\": true,\n    \"web_search_max_results\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "[LIVE] Validate API Key",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// LIVE: makes a real call to the provider's API with the key in the body.",
+                  "// Skipped unless the environment variable allow_live is \"true\" (postman/README.md).",
+                  "if (pm.variables.get('allow_live') !== 'true') {",
+                  "    console.log('Skipped \"' + pm.info.requestName + '\": live request and allow_live is not \"true\".');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Reports whether the key is valid', function () {",
+                  "    pm.expect(pm.response.json().valid).to.be.a('boolean');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/settings/validate-key",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "settings",
+                "validate-key"
+              ]
+            },
+            "description": "`POST /api/settings/validate-key` -- `provider` is `anthropic`, `openai` or\n`tavily`. Always 200; `valid` says whether the key worked. Replace the\nplaceholder locally and don't save it back into the collection.\n\n**LIVE.**",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"provider\": \"anthropic\",\n    \"api_key\": \"sk-ant-your-key-here\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Cross-Chat",
+      "description": "One conversation across several transcripts. Not covered by\nDOCUMENTATION/API_Reference.md.\n\n**Needs `session_id` and `second_session_id`** (Agent -> Create Session and\nCreate Second Session). Creating a cross-chat session and querying it are\n**LIVE** (embeddings + LLM).",
+      "item": [
+        {
+          "name": "[LIVE] Create Cross-Chat Session",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// LIVE: indexes any unindexed transcripts with OpenAI embeddings and builds an LLM agent.",
+                  "// Skipped unless the environment variable allow_live is \"true\" (postman/README.md).",
+                  "if (pm.variables.get('allow_live') !== 'true') {",
+                  "    console.log('Skipped \"' + pm.info.requestName + '\": live request and allow_live is not \"true\".');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Creates a cross-chat session over both sessions', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.referenced_sessions).to.be.an('array').with.lengthOf(2);",
+                  "    pm.expect(json.query_count).to.eql(0);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('cross_chat_session_id', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/cross-chat/sessions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "cross-chat",
+                "sessions"
+              ]
+            },
+            "description": "`POST /api/cross-chat/sessions` -- needs at least two *distinct* agent\nsession ids owned by you. Returns 201.\n\n**LIVE.** **Needs:** `session_id`, `second_session_id`.\n**Sets:** `cross_chat_session_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"session_ids\": [\n        \"{{session_id}}\",\n        \"{{second_session_id}}\"\n    ],\n    \"model_provider\": \"anthropic\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "[LIVE] Query Cross-Chat Session",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// LIVE: calls the LLM (and Tavily web search when enabled).",
+                  "// Skipped unless the environment variable allow_live is \"true\" (postman/README.md).",
+                  "if (pm.variables.get('allow_live') !== 'true') {",
+                  "    console.log('Skipped \"' + pm.info.requestName + '\": live request and allow_live is not \"true\".');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Answers across the transcripts', function () {",
+                  "    pm.expect(json.session_id).to.eql(pm.environment.get('cross_chat_session_id'));",
+                  "    pm.expect(json.content).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.citations).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/cross-chat/sessions/{{cross_chat_session_id}}/query",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "cross-chat",
+                "sessions",
+                "{{cross_chat_session_id}}",
+                "query"
+              ]
+            },
+            "description": "`POST /api/cross-chat/sessions/{cross_chat_id}/query` -- citations carry\n`video_id` / `video_title` so you can tell sources apart.\n\n**LIVE.** **Needs:** `cross_chat_session_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"question\": \"Where do these videos agree, and where do they disagree?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Cross-Chat Sessions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the cross-chat session list', function () {",
+                  "    pm.expect(json.items).to.be.an('array');",
+                  "    pm.expect(json.total).to.eql(json.items.length);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/cross-chat/sessions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "cross-chat",
+                "sessions"
+              ]
+            },
+            "description": "`GET /api/cross-chat/sessions` -- the current user's cross-chat sessions."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Cross-Chat Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the cross-chat session with its history', function () {",
+                  "    pm.expect(json.id).to.eql(pm.environment.get('cross_chat_session_id'));",
+                  "    pm.expect(json.referenced_sessions).to.be.an('array');",
+                  "    pm.expect(json.messages).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/cross-chat/sessions/{{cross_chat_session_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "cross-chat",
+                "sessions",
+                "{{cross_chat_session_id}}"
+              ]
+            },
+            "description": "`GET /api/cross-chat/sessions/{cross_chat_id}` -- details plus history.\n\n**Needs:** `cross_chat_session_id`."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Cross-Chat Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the success message', function () {",
+                  "    pm.expect(json.message).to.eql('Cross-chat session deleted successfully');",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    // Gone now: clear the id so requests that need it skip instead of 404ing.",
+                  "    pm.environment.set('cross_chat_session_id', '');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/cross-chat/sessions/{{cross_chat_session_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "cross-chat",
+                "sessions",
+                "{{cross_chat_session_id}}"
+              ]
+            },
+            "description": "`DELETE /api/cross-chat/sessions/{cross_chat_id}` -- leaves the underlying\nagent sessions alone.\n\n**Needs:** `cross_chat_session_id`. **Clears:** `cross_chat_session_id`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "YouTube Auth",
+      "description": "Connect a Google account for the playlist manager. Not covered by\nDOCUMENTATION/API_Reference.md.\n\nThe OAuth flow runs in a **browser**, not Postman: send Get Connect URL, open\n`authorization_url`, approve, and Google redirects the browser to\n`/api/youtube-auth/callback`. The OAuth Callback request is here for\ncompleteness and is LIVE.",
+      "item": [
+        {
+          "name": "Get Connect URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a Google consent URL', function () {",
+                  "    pm.expect(json.authorization_url).to.match(/^https:\\/\\/accounts\\.google\\.com\\//);",
+                  "    pm.expect(json.authorization_url).to.include('state=');",
+                  "});",
+                  "const match = /[?&]state=([^&]+)/.exec(json.authorization_url || '');",
+                  "if (pm.response.code === 200 && match) {",
+                  "    pm.environment.set('google_oauth_state', decodeURIComponent(match[1]));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/youtube-auth/connect",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "youtube-auth",
+                "connect"
+              ]
+            },
+            "description": "`GET /api/youtube-auth/connect` -- builds the Google consent URL locally (no\ncall to Google). Needs `GOOGLE_OAUTH_CLIENT_ID` / `_SECRET` on the server.\n\n**Sets:** `google_oauth_state` (parsed from the URL; valid for a few minutes)."
+          },
+          "response": []
+        },
+        {
+          "name": "[LIVE] OAuth Callback",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// LIVE: exchanges the authorization code with Google.",
+                  "// Skipped unless the environment variable allow_live is \"true\" (postman/README.md).",
+                  "if (pm.variables.get('allow_live') !== 'true') {",
+                  "    console.log('Skipped \"' + pm.info.requestName + '\": live request and allow_live is not \"true\".');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 307', function () {",
+                  "    pm.response.to.have.status(307);",
+                  "});",
+                  "pm.test('Redirects to the frontend settings page', function () {",
+                  "    pm.expect(pm.response.headers.get('Location')).to.include('/settings/youtube');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/youtube-auth/callback?code={{google_auth_code}}&state={{google_oauth_state}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "youtube-auth",
+                "callback"
+              ],
+              "query": [
+                {
+                  "key": "code",
+                  "value": "{{google_auth_code}}",
+                  "description": "Authorization code from Google's redirect"
+                },
+                {
+                  "key": "state",
+                  "value": "{{google_oauth_state}}",
+                  "description": "State JWT from Get Connect URL"
+                }
+              ]
+            },
+            "description": "`GET /api/youtube-auth/callback?code=&state=` -- public; `state`\nauthenticates the user. Normally hit by Google's browser redirect. To\nreplay one by hand, copy `code` from that redirect into\n`google_auth_code`. Answers 307 to `{FRONTEND_URL}/settings/youtube?connected=1`\n(redirects are not followed here); 400 for a bad or expired `state`.\n\n**LIVE.** **Needs:** `google_auth_code`, `google_oauth_state`.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "Get Connection Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the connection state', function () {",
+                  "    pm.expect(json.connected).to.be.a('boolean');",
+                  "    if (json.connected) {",
+                  "        pm.expect(json.google_account_email).to.be.a('string');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/youtube-auth/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "youtube-auth",
+                "status"
+              ]
+            },
+            "description": "`GET /api/youtube-auth/status` -- reads the stored credential only (no\nrefresh, no call to Google)."
+          },
+          "response": []
+        },
+        {
+          "name": "[LIVE] Disconnect",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// LIVE: calls Google's token revoke endpoint.",
+                  "// Skipped unless the environment variable allow_live is \"true\" (postman/README.md).",
+                  "if (pm.variables.get('allow_live') !== 'true') {",
+                  "    console.log('Skipped \"' + pm.info.requestName + '\": live request and allow_live is not \"true\".');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the success message', function () {",
+                  "    pm.expect(json.message).to.eql('Google account disconnected successfully');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/youtube-auth/disconnect",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "youtube-auth",
+                "disconnect"
+              ]
+            },
+            "description": "`DELETE /api/youtube-auth/disconnect` -- revokes and deletes the stored\ncredential. Cached playlists and transcripts are kept.\n\n**LIVE.**"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Playlists",
+      "description": "The local playlist cache. Not covered by DOCUMENTATION/API_Reference.md.\n\n**Sync is LIVE** and spends YouTube Data API quota. List Playlists fills\n`playlist_id`, `target_playlist_id` and `youtube_playlist_id` from the first two\ncached playlists -- only when they're empty, so ids you set by hand win.\nClear them to re-pick.",
+      "item": [
+        {
+          "name": "[LIVE] Sync Playlists",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// LIVE: re-syncs every owned playlist from the YouTube Data API (spends quota).",
+                  "// Skipped unless the environment variable allow_live is \"true\" (postman/README.md).",
+                  "if (pm.variables.get('allow_live') !== 'true') {",
+                  "    console.log('Skipped \"' + pm.info.requestName + '\": live request and allow_live is not \"true\".');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the sync summary', function () {",
+                  "    pm.expect(json.playlists_synced).to.be.a('number');",
+                  "    pm.expect(json.items_synced).to.be.a('number');",
+                  "    pm.expect(json.quota_units_used).to.be.a('number');",
+                  "    pm.expect(json.synced_at).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/playlists/sync",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "playlists",
+                "sync"
+              ]
+            },
+            "description": "`POST /api/playlists/sync` -- full re-sync of your owned playlists. 400 if\nno Google account is connected, 429 when the daily quota is exhausted.\n\n**LIVE** -- check GET /api/playlists/quota first."
+          },
+          "response": []
+        },
+        {
+          "name": "List Playlists",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a page of playlists', function () {",
+                  "    pm.expect(json.items).to.be.an('array');",
+                  "    pm.expect(json.total).to.be.a('number');",
+                  "    pm.expect(json.page).to.eql(1);",
+                  "    pm.expect(json.page_size).to.eql(20);",
+                  "    json.items.forEach(function (p) {",
+                  "        pm.expect(p.duplicate_count, 'duplicate_count').to.be.a('number');",
+                  "        pm.expect(p.unavailable_count, 'unavailable_count').to.be.a('number');",
+                  "    });",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    if (json.items.length > 0 && !pm.environment.get('playlist_id')) {",
+                  "        pm.environment.set('playlist_id', json.items[0].id);",
+                  "    }",
+                  "    if (json.items.length > 0 && !pm.environment.get('youtube_playlist_id')) {",
+                  "        pm.environment.set('youtube_playlist_id', json.items[0].youtube_playlist_id);",
+                  "    }",
+                  "    if (json.items.length > 1 && !pm.environment.get('target_playlist_id')) {",
+                  "        pm.environment.set('target_playlist_id', json.items[1].id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/playlists?page=1&page_size=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "playlists"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "1-indexed"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20",
+                  "description": "1-100"
+                }
+              ]
+            },
+            "description": "`GET /api/playlists` -- cached playlists with computed duplicate and\nunavailable counts.\n\n**Sets (only if empty):** `playlist_id` and `youtube_playlist_id` from the\nfirst playlist, `target_playlist_id` from the second."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Quota Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the shared daily quota', function () {",
+                  "    pm.expect(json.daily_limit).to.be.a('number');",
+                  "    pm.expect(json.used).to.be.a('number');",
+                  "    pm.expect(json.remaining).to.eql(json.daily_limit - json.used);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/playlists/quota",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "playlists",
+                "quota"
+              ]
+            },
+            "description": "`GET /api/playlists/quota` -- the app-wide YouTube Data API budget for\ntoday (Pacific time), shared by every user. Check it before Sync or Apply."
+          },
+          "response": []
+        },
+        {
+          "name": "List Playlist Items",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a page of playlist items', function () {",
+                  "    pm.expect(json.items).to.be.an('array');",
+                  "    pm.expect(json.total).to.be.a('number');",
+                  "    json.items.forEach(function (item) {",
+                  "        pm.expect(item.video_id, 'video_id').to.be.a('string');",
+                  "        pm.expect(item.availability).to.be.oneOf(['available', 'private', 'deleted', 'unknown']);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/playlists/{{playlist_id}}/items?page=1&page_size=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "playlists",
+                "{{playlist_id}}",
+                "items"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "1-indexed"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20",
+                  "description": "1-100"
+                }
+              ]
+            },
+            "description": "`GET /api/playlists/{playlist_id}/items` -- cached items, by position.\n`playlist_id` is the local UUID, not YouTube's `PL...` id.\n\n**Needs:** `playlist_id` (List Playlists)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Watch History",
+      "description": "Google Takeout watch-history imports, used by the `purge_watched` plan. Not\ncovered by DOCUMENTATION/API_Reference.md.\n\nImport uploads `postman/fixtures/watch-history.sample.json`. Newman resolves\nthat path from the directory you run it in (the repo root); in the Postman app,\nset Settings -> General -> Working directory to the repo root, or re-pick the\nfile. Each import adds a record -- imports are never replaced.",
+      "item": [
+        {
+          "name": "Import Watch History",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Imports the Takeout rows', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.entry_count).to.be.above(0);",
+                  "    pm.expect(json.status).to.be.a('string');",
+                  "    pm.expect(json.original_filename).to.be.a('string');",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('watch_history_import_id', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/watch-history/import",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "watch-history",
+                "import"
+              ]
+            },
+            "description": "`POST /api/watch-history/import` -- multipart upload, field `file`.\nReturns 201 with `entry_count`. Unparseable rows are skipped; a file that\nisn't a JSON array is a 400.\n\n**Sets:** `watch_history_import_id`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "postman/fixtures/watch-history.sample.json",
+                  "description": "Takeout watch-history.json (a JSON array), up to 100 MB"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Watch History Imports",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a page of imports', function () {",
+                  "    pm.expect(json.items).to.be.an('array');",
+                  "    pm.expect(json.total).to.be.a('number');",
+                  "    pm.expect(json.skip).to.eql(0);",
+                  "    pm.expect(json.limit).to.eql(20);",
+                  "});",
+                  "const importId = pm.environment.get('watch_history_import_id');",
+                  "if (importId) {",
+                  "    pm.test('Includes the import just uploaded', function () {",
+                  "        pm.expect(json.items.map(function (i) { return i.id; })).to.include(importId);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/watch-history?skip=0&limit=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "watch-history"
+              ],
+              "query": [
+                {
+                  "key": "skip",
+                  "value": "0",
+                  "description": "Records to skip"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "1-100"
+                }
+              ]
+            },
+            "description": "`GET /api/watch-history` -- your past imports, newest first."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Plans",
+      "description": "Plan -> review -> apply. Not covered by DOCUMENTATION/API_Reference.md.\n\n**Creating a plan is a dry run** -- it never changes YouTube. These kinds are\ngenerated locally: `create`, `dedupe`, `purge_unavailable` (mode `deleted`, no\nenrich), `purge_watched`, `move`, `reorder`, and `add_url` with individual video\nURLs. The **LIVE** ones read from YouTube: `purge_unavailable` with\n`mode: deleted_and_private` or `enrich: true`, `copy`, and `add_url` with a\nplaylist (`list=`) URL, which syncs an uncached source on demand.\n\n**Apply is LIVE**: it edits real playlists and spends the shared daily quota\n(default budget 200 units = four writes). Check Playlists -> Get Quota Status\n(or `/quota-budget-check` in Claude Code) first.\n\nEvery Create request sets `plan_id`, and Get Plan / Apply Plan use it -- so\nApply runs the **last plan created**. In folder order that's the `create`\nplan (one new, empty, private playlist).\n\nMost kinds need `playlist_id` (and `move` needs `target_playlist_id`) -- see\nPlaylists -> List Playlists.",
+      "item": [
+        {
+          "name": "Create Plan - dedupe",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a pending dedupe plan with its ops', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.kind).to.eql('dedupe');",
+                  "    pm.expect(json.status).to.eql('pending');",
+                  "    pm.expect(json.ops).to.be.an('array');",
+                  "    pm.expect(json.total_estimated_units).to.be.a('number');",
+                  "    pm.expect(json.total_actual_units).to.eql(0);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('plan_id', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/plans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "plans"
+              ]
+            },
+            "description": "`POST /api/plans` with `kind: \"dedupe\"` -- one delete op per repeat of a\nvideo, keeping the first occurrence. Local.\n\n**Needs:** `playlist_id`. **Sets:** `plan_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"kind\": \"dedupe\",\n    \"playlist_id\": \"{{playlist_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Plan - purge_unavailable",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a pending purge_unavailable plan with its ops', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.kind).to.eql('purge_unavailable');",
+                  "    pm.expect(json.status).to.eql('pending');",
+                  "    pm.expect(json.ops).to.be.an('array');",
+                  "    pm.expect(json.total_estimated_units).to.be.a('number');",
+                  "    pm.expect(json.total_actual_units).to.eql(0);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('plan_id', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/plans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "plans"
+              ]
+            },
+            "description": "`POST /api/plans` with `kind: \"purge_unavailable\"`, `mode: \"deleted\"`,\n`enrich: false` -- removes items the last sync marked deleted. Local.\n\n**Needs:** `playlist_id`. **Sets:** `plan_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"kind\": \"purge_unavailable\",\n    \"playlist_id\": \"{{playlist_id}}\",\n    \"mode\": \"deleted\",\n    \"enrich\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Plan - purge_watched",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a pending purge_watched plan with its ops', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.kind).to.eql('purge_watched');",
+                  "    pm.expect(json.status).to.eql('pending');",
+                  "    pm.expect(json.ops).to.be.an('array');",
+                  "    pm.expect(json.total_estimated_units).to.be.a('number');",
+                  "    pm.expect(json.total_actual_units).to.eql(0);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('plan_id', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/plans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "plans"
+              ]
+            },
+            "description": "`POST /api/plans` with `kind: \"purge_watched\"` -- removes items that appear\nin any imported watch history (Watch History -> Import). Drop\n`watched_before` to purge everything watched. Local.\n\n**Needs:** `playlist_id`. **Sets:** `plan_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"kind\": \"purge_watched\",\n    \"playlist_id\": \"{{playlist_id}}\",\n    \"watched_before\": \"2025-01-01T00:00:00Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Plan - move",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a pending move plan with its ops', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.kind).to.eql('move');",
+                  "    pm.expect(json.status).to.eql('pending');",
+                  "    pm.expect(json.ops).to.be.an('array');",
+                  "    pm.expect(json.total_estimated_units).to.be.a('number');",
+                  "    pm.expect(json.total_actual_units).to.eql(0);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('plan_id', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/plans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "plans"
+              ]
+            },
+            "description": "`POST /api/plans` with `kind: \"move\"` -- copies matching items into the\ntarget, then removes them from the source. `filter_regex` matches titles;\nomit it to move everything. Local.\n\n**Needs:** `playlist_id`, `target_playlist_id`. **Sets:** `plan_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"kind\": \"move\",\n    \"source_playlist_id\": \"{{playlist_id}}\",\n    \"target_playlist_id\": \"{{target_playlist_id}}\",\n    \"filter_regex\": \"(?i)tutorial\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Plan - reorder",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a pending reorder plan with its ops', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.kind).to.eql('reorder');",
+                  "    pm.expect(json.status).to.eql('pending');",
+                  "    pm.expect(json.ops).to.be.an('array');",
+                  "    pm.expect(json.total_estimated_units).to.be.a('number');",
+                  "    pm.expect(json.total_actual_units).to.eql(0);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('plan_id', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/plans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "plans"
+              ]
+            },
+            "description": "`POST /api/plans` with `kind: \"reorder\"` -- `sort_by` is `title`,\n`channel`, `published` or `added`. Emits ops only for items whose position\nchanges. Local.\n\n**Needs:** `playlist_id`. **Sets:** `plan_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"kind\": \"reorder\",\n    \"playlist_id\": \"{{playlist_id}}\",\n    \"sort_by\": \"title\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Plan - add_url (videos)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a pending add_url plan with its ops', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.kind).to.eql('add_url');",
+                  "    pm.expect(json.status).to.eql('pending');",
+                  "    pm.expect(json.ops).to.be.an('array');",
+                  "    pm.expect(json.total_estimated_units).to.be.a('number');",
+                  "    pm.expect(json.total_actual_units).to.eql(0);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('plan_id', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/plans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "plans"
+              ]
+            },
+            "description": "`POST /api/plans` with `kind: \"add_url\"` and individual video URLs/IDs --\nparsed locally, no YouTube call. Give exactly one of `target_title`\n(reuses a same-titled playlist, else plans a new private one) or\n`target_playlist_id`. Don't mix video URLs with a `list=` URL.\n\n**Sets:** `plan_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"kind\": \"add_url\",\n    \"urls\": [\n        \"https://www.youtube.com/watch?v=dQw4w9WgXcQ\",\n        \"https://youtu.be/jNQXAC9IVRw\"\n    ],\n    \"target_title\": \"Postman Collection Demo\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "[LIVE] Create Plan - add_url (playlist URL)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// LIVE: a list= URL becomes a copy plan that syncs an uncached source playlist from YouTube (spends quota).",
+                  "// Skipped unless the environment variable allow_live is \"true\" (postman/README.md).",
+                  "if (pm.variables.get('allow_live') !== 'true') {",
+                  "    console.log('Skipped \"' + pm.info.requestName + '\": live request and allow_live is not \"true\".');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a pending copy plan with its ops', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.kind).to.eql('copy');",
+                  "    pm.expect(json.status).to.eql('pending');",
+                  "    pm.expect(json.ops).to.be.an('array');",
+                  "    pm.expect(json.total_estimated_units).to.be.a('number');",
+                  "    pm.expect(json.total_actual_units).to.eql(0);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('plan_id', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/plans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "plans"
+              ]
+            },
+            "description": "`POST /api/plans` with `kind: \"add_url\"` and a playlist URL -- expands into\na copy of that playlist. Replace the URL with any public playlist.\n\n**LIVE.** **Needs:** `youtube_playlist_id` (List Playlists). **Sets:** `plan_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"kind\": \"add_url\",\n    \"urls\": [\n        \"https://www.youtube.com/playlist?list={{youtube_playlist_id}}\"\n    ],\n    \"target_title\": \"Postman Copy of Playlist\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "[LIVE] Create Plan - copy",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// LIVE: syncs any source playlist that isn't cached yet from YouTube (spends quota).",
+                  "// Skipped unless the environment variable allow_live is \"true\" (postman/README.md).",
+                  "if (pm.variables.get('allow_live') !== 'true') {",
+                  "    console.log('Skipped \"' + pm.info.requestName + '\": live request and allow_live is not \"true\".');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a pending copy plan with its ops', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.kind).to.eql('copy');",
+                  "    pm.expect(json.status).to.eql('pending');",
+                  "    pm.expect(json.ops).to.be.an('array');",
+                  "    pm.expect(json.total_estimated_units).to.be.a('number');",
+                  "    pm.expect(json.total_actual_units).to.eql(0);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('plan_id', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/plans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "plans"
+              ]
+            },
+            "description": "`POST /api/plans` with `kind: \"copy\"` -- `source_playlist_ids` are\nYouTube `PL...` ids, not local UUIDs. Exactly one of `target_title` /\n`target_playlist_id`; `force_new: true` always makes a new playlist.\n\n**LIVE.** **Needs:** `youtube_playlist_id` (List Playlists). **Sets:** `plan_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"kind\": \"copy\",\n    \"source_playlist_ids\": [\n        \"{{youtube_playlist_id}}\"\n    ],\n    \"target_title\": \"Postman Copy Demo\",\n    \"filter_regex\": \"(?i)live\",\n    \"force_new\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "[LIVE] Create Plan - purge_unavailable (deleted_and_private)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// LIVE: runs a videos.list enrichment pass against YouTube (1 unit per 50 videos).",
+                  "// Skipped unless the environment variable allow_live is \"true\" (postman/README.md).",
+                  "if (pm.variables.get('allow_live') !== 'true') {",
+                  "    console.log('Skipped \"' + pm.info.requestName + '\": live request and allow_live is not \"true\".');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a pending purge_unavailable plan with its ops', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.kind).to.eql('purge_unavailable');",
+                  "    pm.expect(json.status).to.eql('pending');",
+                  "    pm.expect(json.ops).to.be.an('array');",
+                  "    pm.expect(json.total_estimated_units).to.be.a('number');",
+                  "    pm.expect(json.total_actual_units).to.eql(0);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('plan_id', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/plans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "plans"
+              ]
+            },
+            "description": "`POST /api/plans` with `mode: \"deleted_and_private\"` (which always enriches)\n-- also targets privated, region-blocked and age-gated videos.\n\n**LIVE.** **Needs:** `playlist_id`. **Sets:** `plan_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"kind\": \"purge_unavailable\",\n    \"playlist_id\": \"{{playlist_id}}\",\n    \"mode\": \"deleted_and_private\",\n    \"enrich\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Plan - create playlist",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns a pending create plan with its ops', function () {",
+                  "    pm.expect(json.id).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(json.kind).to.eql('create');",
+                  "    pm.expect(json.status).to.eql('pending');",
+                  "    pm.expect(json.ops).to.be.an('array');",
+                  "    pm.expect(json.total_estimated_units).to.be.a('number');",
+                  "    pm.expect(json.total_actual_units).to.eql(0);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('plan_id', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/plans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "plans"
+              ]
+            },
+            "description": "`POST /api/plans` with `kind: \"create\"` -- one `insert_playlist` op. Local.\nLast Create in the folder on purpose: Apply Plan runs this harmless plan\nunless you pick another.\n\n**Sets:** `plan_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"kind\": \"create\",\n    \"title\": \"Postman Collection Demo\",\n    \"description\": \"Created from the transcript-api Postman collection.\",\n    \"privacy_status\": \"private\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Plan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the plan with its ops', function () {",
+                  "    pm.expect(json.id).to.eql(pm.environment.get('plan_id'));",
+                  "    pm.expect(json.status).to.be.oneOf(['pending', 'applying', 'done', 'failed']);",
+                  "    pm.expect(json.ops).to.be.an('array');",
+                  "    pm.expect(json.total_estimated_units).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/plans/{{plan_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "plans",
+                "{{plan_id}}"
+              ]
+            },
+            "description": "`GET /api/plans/{plan_id}` -- the plan and its ordered ops, with\n`total_estimated_units` / `total_actual_units`. Review before Apply.\n\n**Needs:** `plan_id` (any Create Plan request)."
+          },
+          "response": []
+        },
+        {
+          "name": "[LIVE] Apply Plan",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// LIVE: executes the plan's ops against real YouTube playlists and spends quota.",
+                  "// Skipped unless the environment variable allow_live is \"true\" (postman/README.md).",
+                  "if (pm.variables.get('allow_live') !== 'true') {",
+                  "    console.log('Skipped \"' + pm.info.requestName + '\": live request and allow_live is not \"true\".');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const json = (function () { try { return pm.response.json() || {}; } catch (e) { return {}; } })();",
+                  "pm.test('Returns the plan state after applying', function () {",
+                  "    pm.expect(json.id).to.eql(pm.environment.get('plan_id'));",
+                  "    pm.expect(json.status).to.be.oneOf(['applying', 'done', 'failed']);",
+                  "    pm.expect(json.total_actual_units).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/plans/{{plan_id}}/apply",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "plans",
+                "{{plan_id}}",
+                "apply"
+              ]
+            },
+            "description": "`POST /api/plans/{plan_id}/apply` -- runs pending ops in order until\n`budget_units` is spent (default 200). A quota halt is not an error: the\nplan stays `applying` and you can apply again tomorrow to resume.\n\n**LIVE -- edits real playlists.** Run the quota check first.\n**Needs:** `plan_id` (the last plan you created).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"budget_units\": 100\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

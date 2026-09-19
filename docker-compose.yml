@@ -1,0 +1,70 @@
+# =============================================================================
+# YouTube Transcript API - Docker Compose Configuration
+# =============================================================================
+# Usage:
+#   docker-compose up --build        # Build and start all services
+#   docker-compose up -d             # Start in detached mode
+#   docker-compose down              # Stop all services
+#   docker-compose logs -f           # Follow logs
+# =============================================================================
+
+name: boxless-transcript-api
+
+services:
+  # ---------------------------------------------------------------------------
+  # API Service - FastAPI Backend
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: boxless-api
+    ports:
+      - "127.0.0.1:5050:8000"
+    volumes:
+      # Persist SQLite database
+      - ./transcripts.db:/app/transcripts.db
+      # Persist LanceDB vector database
+      - ./data:/app/data
+    env_file:
+      - .env.docker
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Frontend Service - React with Nginx
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./youtube-transcript-ui
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:5050
+    container_name: boxless-frontend
+    ports:
+      - "127.0.0.1:8050:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+# =============================================================================
+# Notes:
+# -----------------------------------------------------------------------------
+# - API is accessible at http://localhost:5050
+# - Frontend is accessible at http://localhost:8050
+# - API documentation at http://localhost:5050/docs
+# - Set API keys in .env.docker before starting
+# - Data persists in ./transcripts.db and ./data/ directories
+# =============================================================================
