@@ -301,13 +301,12 @@ class TestExistingRoutesUnchanged:
         assert response.status_code == 200
         assert response.json() == {"status": "healthy"}
 
-    def test_health_prefixed_path_is_not_intercepted(
-        self, spa_client: TestClient
-    ) -> None:
-        """Paths starting with 'health' are left alone by the frontend route."""
+    def test_health_prefixed_path_returns_404(self, spa_client: TestClient) -> None:
+        """Unknown paths starting with 'health' return 404 and never index.html."""
         response = spa_client.get("/health/extra")
-        assert response.status_code == 200
-        assert response.text == "null"
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Not Found"}
+        assert INDEX_HTML not in response.text
 
     def test_docs(self, spa_client: TestClient) -> None:
         """/docs still serves the API documentation page."""
@@ -327,9 +326,16 @@ class TestExistingRoutesUnchanged:
         assert response.status_code == 200
         assert "redoc" in response.text.lower()
 
-    def test_unknown_api_path_is_left_alone(self, spa_client: TestClient) -> None:
-        """Unknown /api/ paths keep their current response and never return index.html."""
+    def test_unknown_api_path_returns_404(self, spa_client: TestClient) -> None:
+        """Unknown /api/ paths return 404 and never return index.html."""
         response = spa_client.get("/api/does-not-exist")
-        assert response.status_code == 200
-        assert response.text == "null"
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Not Found"}
+        assert INDEX_HTML not in response.text
+
+    def test_nested_unknown_api_path_returns_404(self, spa_client: TestClient) -> None:
+        """Unknown nested /api/ paths also return 404."""
+        response = spa_client.get("/api/transcripts/does/not/exist")
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Not Found"}
         assert INDEX_HTML not in response.text

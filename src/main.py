@@ -5,7 +5,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -230,9 +230,11 @@ def register_frontend_routes(target_app: FastAPI, dist_dir: Path) -> None:
     @target_app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         """Serve SPA for all non-API routes."""
-        # Don't intercept API routes or known endpoints
+        # Don't intercept API routes or known endpoints. Requests that reach this
+        # point matched no real route, so answer with a real 404 rather than None
+        # (which FastAPI would turn into a 200 with a null body).
         if full_path.startswith(("api/", "docs", "redoc", "openapi.json", "health")):
-            return None
+            raise HTTPException(status_code=404)
 
         # Serve the file only if it exists inside the build folder
         file_path = resolve_build_file(dist_root, full_path)
