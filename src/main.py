@@ -184,36 +184,70 @@ async def health_check():
 # =============================================================================
 # Static File Serving for Production (Replit)
 # =============================================================================
-# Serve the frontend build when running in production without nginx
-frontend_dist = Path(__file__).parent.parent / "youtube-transcript-ui" / "dist"
+def resolve_build_file(dist_root: Path, requested: str) -> Path | None:
+    """
+    Resolve a requested path to a file inside the build folder.
 
-if frontend_dist.exists():
-    logger.info("Frontend build found, serving static files from %s", frontend_dist)
+    Args:
+        dist_root: The resolved (absolute) frontend build folder
+        requested: The path taken from the request URL
+
+    Returns:
+        The resolved file path if it is a regular file inside the build folder,
+        otherwise None
+    """
+    try:
+        candidate = (dist_root / requested).resolve()
+    except (OSError, ValueError) as exc:
+        logger.debug("Could not resolve requested path: %s", exc)
+        return None
+    if candidate.is_relative_to(dist_root) and candidate.is_file():
+        return candidate
+    return None
+
+
+def register_frontend_routes(target_app: FastAPI, dist_dir: Path) -> None:
+    """
+    Register routes that serve the built frontend from a build folder.
+
+    Args:
+        target_app: The FastAPI application to add the routes to
+        dist_dir: The frontend build folder (must contain index.html and assets/)
+    """
+    dist_root = dist_dir.resolve()
 
     # Serve static assets (JS, CSS, images)
-    app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
+    target_app.mount("/assets", StaticFiles(directory=dist_dir / "assets"), name="assets")
 
-    @app.get("/favicon.svg")
+    @target_app.get("/favicon.svg")
     async def favicon():
         """Serve favicon."""
-        favicon_path = frontend_dist / "favicon.svg"
+        favicon_path = dist_dir / "favicon.svg"
         if favicon_path.exists():
             return FileResponse(favicon_path)
-        return FileResponse(frontend_dist / "favicon.ico", media_type="image/x-icon")
+        return FileResponse(dist_dir / "favicon.ico", media_type="image/x-icon")
 
-    @app.get("/{full_path:path}")
+    @target_app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         """Serve SPA for all non-API routes."""
         # Don't intercept API routes or known endpoints
         if full_path.startswith(("api/", "docs", "redoc", "openapi.json", "health")):
             return None
 
-        # Check if the file exists (for direct file requests)
-        file_path = frontend_dist / full_path
-        if file_path.exists() and file_path.is_file():
+        # Serve the file only if it exists inside the build folder
+        file_path = resolve_build_file(dist_root, full_path)
+        if file_path is not None:
             return FileResponse(file_path)
 
         # Return index.html for SPA client-side routing
-        return FileResponse(frontend_dist / "index.html")
+        return FileResponse(dist_dir / "index.html")
+
+
+# Serve the frontend build when running in production without nginx
+frontend_dist = Path(__file__).parent.parent / "youtube-transcript-ui" / "dist"
+
+if frontend_dist.exists():
+    logger.info("Frontend build found, serving static files from %s", frontend_dist)
+    register_frontend_routes(app, frontend_dist)
 else:
     logger.debug("No frontend build found at %s", frontend_dist)
