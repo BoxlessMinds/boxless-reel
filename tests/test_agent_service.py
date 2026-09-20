@@ -22,6 +22,8 @@ from src.services import (
     TranscriptNotFoundError,
 )
 
+USER_ID = "test-user-id"
+
 
 # --- Fixtures ---
 
@@ -90,7 +92,7 @@ def mock_agent_response() -> AgentResponse:
         ],
         session_id="test-session-id",
         model_used="claude-sonnet-4-5",
-        search_results_used=1,
+        transcript_results_used=1,
         created_at=datetime.now(timezone.utc),
     )
 
@@ -122,6 +124,7 @@ class TestSessionInfo:
             transcript_id="transcript-456",
             video_id="dQw4w9WgXcQ",
             video_title="Test Video",
+            thumbnail_url=None,
             model_provider="anthropic",
             model_id="claude-sonnet-4-5",
         )
@@ -143,6 +146,7 @@ class TestSessionInfo:
             transcript_id="transcript-456",
             video_id="dQw4w9WgXcQ",
             video_title="Test Video",
+            thumbnail_url=None,
             model_provider="anthropic",
             model_id="claude-sonnet-4-5",
             query_count=5,
@@ -175,7 +179,7 @@ class TestQueryResponse:
             citations=[{"text": "quote", "start_time": 0.0}],
             session_id="session-123",
             model_used="claude-sonnet-4-5",
-            search_results_used=3,
+            transcript_results_used=3,
             created_at=now,
         )
 
@@ -183,7 +187,7 @@ class TestQueryResponse:
         assert len(response.citations) == 1
         assert response.session_id == "session-123"
         assert response.model_used == "claude-sonnet-4-5"
-        assert response.search_results_used == 3
+        assert response.transcript_results_used == 3
         assert response.created_at == now
 
     def test_query_response_to_dict(self):
@@ -194,7 +198,7 @@ class TestQueryResponse:
             citations=[{"text": "quote", "start_time": 0.0}],
             session_id="session-123",
             model_used="claude-sonnet-4-5",
-            search_results_used=3,
+            transcript_results_used=3,
             created_at=now,
         )
 
@@ -204,7 +208,7 @@ class TestQueryResponse:
         assert result["citations"] == [{"text": "quote", "start_time": 0.0}]
         assert result["session_id"] == "session-123"
         assert result["model_used"] == "claude-sonnet-4-5"
-        assert result["search_results_used"] == 3
+        assert result["transcript_results_used"] == 3
         assert result["created_at"] == now.isoformat()
 
 
@@ -310,7 +314,7 @@ class TestTranscriptLookup:
         self, service_with_mocks: AgentService, mock_transcript: MagicMock
     ):
         """_get_transcript_or_raise returns transcript when found."""
-        result = service_with_mocks._get_transcript_or_raise("test-transcript-id")
+        result = service_with_mocks._get_transcript_or_raise("test-transcript-id", USER_ID)
 
         assert result == mock_transcript
 
@@ -322,7 +326,7 @@ class TestTranscriptLookup:
         service = AgentService(mock_repository, config=enabled_config)
 
         with pytest.raises(TranscriptNotFoundError) as exc_info:
-            service._get_transcript_or_raise("nonexistent-id")
+            service._get_transcript_or_raise("nonexistent-id", USER_ID)
 
         assert "nonexistent-id" in str(exc_info.value)
 
@@ -339,7 +343,7 @@ class TestAgentServiceIndexing:
         """index_transcript successfully indexes a transcript."""
         mock_knowledge_base.load_transcript.return_value = 15
 
-        result = service_with_mocks.index_transcript("test-transcript-id")
+        result = service_with_mocks.index_transcript("test-transcript-id", USER_ID)
 
         assert result == 15
         mock_knowledge_base.load_transcript.assert_called_once()
@@ -353,7 +357,7 @@ class TestAgentServiceIndexing:
         service._knowledge_base = MagicMock()
 
         with pytest.raises(TranscriptNotFoundError):
-            service.index_transcript("nonexistent-id")
+            service.index_transcript("nonexistent-id", USER_ID)
 
     def test_index_transcript_not_available(
         self, mock_repository: MagicMock, disabled_config: MagicMock
@@ -362,7 +366,7 @@ class TestAgentServiceIndexing:
         service = AgentService(mock_repository, config=disabled_config)
 
         with pytest.raises(AgentNotAvailableError):
-            service.index_transcript("test-transcript-id")
+            service.index_transcript("test-transcript-id", USER_ID)
 
     def test_index_transcript_indexing_error(
         self,
@@ -373,7 +377,7 @@ class TestAgentServiceIndexing:
         mock_knowledge_base.load_transcript.side_effect = KBIndexingError("KB error")
 
         with pytest.raises(IndexingError) as exc_info:
-            service_with_mocks.index_transcript("test-transcript-id")
+            service_with_mocks.index_transcript("test-transcript-id", USER_ID)
 
         assert "KB error" in str(exc_info.value)
 
@@ -418,6 +422,7 @@ class TestAgentServiceSessionManagement:
 
         service = AgentService(mock_repository, config=enabled_config)
         service._knowledge_base = mock_knowledge_base
+        service._document_knowledge_base = MagicMock()
 
         with patch(
             "src.services.agent_service.TranscriptQueryAgent"
@@ -425,7 +430,7 @@ class TestAgentServiceSessionManagement:
             mock_agent = MagicMock()
             mock_agent_class.return_value = mock_agent
 
-            result = service.create_session("test-transcript-id", "anthropic")
+            result = service.create_session("test-transcript-id", USER_ID, model_provider="anthropic")
 
             assert isinstance(result, SessionInfo)
             assert result.transcript_id == "test-transcript-id"
@@ -449,6 +454,7 @@ class TestAgentServiceSessionManagement:
 
         service = AgentService(mock_repository, config=enabled_config)
         service._knowledge_base = mock_knowledge_base
+        service._document_knowledge_base = MagicMock()
 
         with patch(
             "src.services.agent_service.TranscriptQueryAgent"
@@ -456,7 +462,7 @@ class TestAgentServiceSessionManagement:
             mock_agent = MagicMock()
             mock_agent_class.return_value = mock_agent
 
-            service.create_session("test-transcript-id")
+            service.create_session("test-transcript-id", USER_ID)
 
             mock_knowledge_base.load_transcript.assert_called_once()
 
@@ -467,7 +473,7 @@ class TestAgentServiceSessionManagement:
         service = AgentService(mock_repository, config=disabled_config)
 
         with pytest.raises(AgentNotAvailableError):
-            service.create_session("test-transcript-id")
+            service.create_session("test-transcript-id", USER_ID)
 
     def test_create_session_transcript_not_found(
         self, mock_repository: MagicMock, enabled_config: MagicMock
@@ -477,7 +483,7 @@ class TestAgentServiceSessionManagement:
         service = AgentService(mock_repository, config=enabled_config)
 
         with pytest.raises(TranscriptNotFoundError):
-            service.create_session("nonexistent-id")
+            service.create_session("nonexistent-id", USER_ID)
 
     def test_get_session_success(
         self, mock_repository: MagicMock, enabled_config: MagicMock
@@ -489,12 +495,13 @@ class TestAgentServiceSessionManagement:
             transcript_id="test-transcript-id",
             video_id="dQw4w9WgXcQ",
             video_title="Test Video",
+            thumbnail_url=None,
             model_provider="anthropic",
             model_id="claude-sonnet-4-5",
         )
         service._sessions["test-session-id"] = session_info
 
-        result = service.get_session("test-session-id")
+        result = service.get_session("test-session-id", USER_ID)
 
         assert result == session_info
 
@@ -505,7 +512,7 @@ class TestAgentServiceSessionManagement:
         service = AgentService(mock_repository, config=enabled_config)
 
         with pytest.raises(SessionNotFoundError) as exc_info:
-            service.get_session("nonexistent-session")
+            service.get_session("nonexistent-session", USER_ID)
 
         assert "nonexistent-session" in str(exc_info.value)
 
@@ -519,13 +526,14 @@ class TestAgentServiceSessionManagement:
             transcript_id="test-transcript-id",
             video_id="dQw4w9WgXcQ",
             video_title="Test Video",
+            thumbnail_url=None,
             model_provider="anthropic",
             model_id="claude-sonnet-4-5",
         )
         service._sessions["test-session-id"] = session_info
         service._agents["test-session-id"] = MagicMock()
 
-        service.delete_session("test-session-id")
+        service.delete_session("test-session-id", USER_ID)
 
         assert "test-session-id" not in service._sessions
         assert "test-session-id" not in service._agents
@@ -537,7 +545,7 @@ class TestAgentServiceSessionManagement:
         service = AgentService(mock_repository, config=enabled_config)
 
         with pytest.raises(SessionNotFoundError):
-            service.delete_session("nonexistent-session")
+            service.delete_session("nonexistent-session", USER_ID)
 
     def test_list_sessions_all(
         self, mock_repository: MagicMock, enabled_config: MagicMock
@@ -549,6 +557,7 @@ class TestAgentServiceSessionManagement:
             transcript_id="transcript-1",
             video_id="vid1",
             video_title="Video 1",
+            thumbnail_url=None,
             model_provider="anthropic",
             model_id="claude-sonnet-4-5",
         )
@@ -557,13 +566,14 @@ class TestAgentServiceSessionManagement:
             transcript_id="transcript-2",
             video_id="vid2",
             video_title="Video 2",
+            thumbnail_url=None,
             model_provider="openai",
             model_id="gpt-4o",
         )
         service._sessions["session-1"] = session1
         service._sessions["session-2"] = session2
 
-        result = service.list_sessions()
+        result = service.list_sessions(USER_ID)
 
         assert len(result) == 2
         assert session1 in result
@@ -579,6 +589,7 @@ class TestAgentServiceSessionManagement:
             transcript_id="transcript-1",
             video_id="vid1",
             video_title="Video 1",
+            thumbnail_url=None,
             model_provider="anthropic",
             model_id="claude-sonnet-4-5",
         )
@@ -587,13 +598,14 @@ class TestAgentServiceSessionManagement:
             transcript_id="transcript-2",
             video_id="vid2",
             video_title="Video 2",
+            thumbnail_url=None,
             model_provider="openai",
             model_id="gpt-4o",
         )
         service._sessions["session-1"] = session1
         service._sessions["session-2"] = session2
 
-        result = service.list_sessions(transcript_id="transcript-1")
+        result = service.list_sessions(USER_ID, transcript_id="transcript-1")
 
         assert len(result) == 1
         assert session1 in result
@@ -610,7 +622,7 @@ class TestAgentServiceSessionManagement:
         ]
         service._agents["test-session-id"] = mock_agent
 
-        result = service.get_session_history("test-session-id")
+        result = service.get_session_history("test-session-id", USER_ID)
 
         assert len(result) == 2
         assert result[0]["role"] == "user"
@@ -623,7 +635,7 @@ class TestAgentServiceSessionManagement:
         service = AgentService(mock_repository, config=enabled_config)
 
         with pytest.raises(SessionNotFoundError):
-            service.get_session_history("nonexistent-session")
+            service.get_session_history("nonexistent-session", USER_ID)
 
 
 # --- Query Tests ---
@@ -645,6 +657,7 @@ class TestAgentServiceQuery:
             transcript_id="test-transcript-id",
             video_id="dQw4w9WgXcQ",
             video_title="Test Video",
+            thumbnail_url=None,
             model_provider="anthropic",
             model_id="claude-sonnet-4-5",
         )
@@ -654,7 +667,7 @@ class TestAgentServiceQuery:
         service._sessions["test-session-id"] = session_info
         service._agents["test-session-id"] = mock_agent
 
-        result = service.query("test-session-id", "What is discussed?")
+        result = service.query("test-session-id", USER_ID, "What is discussed?")
 
         assert isinstance(result, QueryResponse)
         assert result.content == mock_agent_response.content
@@ -669,7 +682,7 @@ class TestAgentServiceQuery:
         service = AgentService(mock_repository, config=enabled_config)
 
         with pytest.raises(SessionNotFoundError):
-            service.query("nonexistent-session", "What is this about?")
+            service.query("nonexistent-session", USER_ID, "What is this about?")
 
     def test_query_execution_error(
         self, mock_repository: MagicMock, enabled_config: MagicMock
@@ -681,6 +694,7 @@ class TestAgentServiceQuery:
             transcript_id="test-transcript-id",
             video_id="dQw4w9WgXcQ",
             video_title="Test Video",
+            thumbnail_url=None,
             model_provider="anthropic",
             model_id="claude-sonnet-4-5",
         )
@@ -691,7 +705,7 @@ class TestAgentServiceQuery:
         service._agents["test-session-id"] = mock_agent
 
         with pytest.raises(QueryExecutionError) as exc_info:
-            service.query("test-session-id", "What is this about?")
+            service.query("test-session-id", USER_ID, "What is this about?")
 
         assert "LLM timeout" in str(exc_info.value)
 
@@ -712,6 +726,7 @@ class TestAgentServiceQuery:
             transcript_id="test-transcript-id",
             video_id="dQw4w9WgXcQ",
             video_title="Test Video",
+            thumbnail_url=None,
             model_provider="anthropic",
             model_id="claude-sonnet-4-5",
             last_activity=initial_time,
@@ -723,8 +738,8 @@ class TestAgentServiceQuery:
         service._sessions["test-session-id"] = session_info
         service._agents["test-session-id"] = mock_agent
 
-        service.query("test-session-id", "First question")
-        service.query("test-session-id", "Second question")
+        service.query("test-session-id", USER_ID, "First question")
+        service.query("test-session-id", USER_ID, "Second question")
 
         assert session_info.query_count == 2
         assert session_info.last_activity > initial_time
@@ -759,7 +774,7 @@ class TestAgentServiceQueryOneshot:
             mock_agent_class.return_value = mock_agent
 
             result = service.query_oneshot(
-                "test-transcript-id", "What is this about?"
+                "test-transcript-id", USER_ID, "What is this about?"
             )
 
             assert isinstance(result, QueryResponse)
@@ -789,7 +804,7 @@ class TestAgentServiceQueryOneshot:
             mock_agent.query.return_value = mock_agent_response
             mock_agent_class.return_value = mock_agent
 
-            service.query_oneshot("test-transcript-id", "What is this about?")
+            service.query_oneshot("test-transcript-id", USER_ID, "What is this about?")
 
             mock_knowledge_base.load_transcript.assert_called_once()
 
@@ -800,7 +815,7 @@ class TestAgentServiceQueryOneshot:
         service = AgentService(mock_repository, config=disabled_config)
 
         with pytest.raises(AgentNotAvailableError):
-            service.query_oneshot("test-transcript-id", "What is this about?")
+            service.query_oneshot("test-transcript-id", USER_ID, "What is this about?")
 
     def test_query_oneshot_transcript_not_found(
         self, mock_repository: MagicMock, enabled_config: MagicMock
@@ -810,7 +825,7 @@ class TestAgentServiceQueryOneshot:
         service = AgentService(mock_repository, config=enabled_config)
 
         with pytest.raises(TranscriptNotFoundError):
-            service.query_oneshot("nonexistent-id", "What is this about?")
+            service.query_oneshot("nonexistent-id", USER_ID, "What is this about?")
 
     def test_query_oneshot_execution_error(
         self,
@@ -834,7 +849,7 @@ class TestAgentServiceQueryOneshot:
             mock_agent_class.return_value = mock_agent
 
             with pytest.raises(QueryExecutionError) as exc_info:
-                service.query_oneshot("test-transcript-id", "What is this about?")
+                service.query_oneshot("test-transcript-id", USER_ID, "What is this about?")
 
             assert "LLM error" in str(exc_info.value)
 

@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from src.models.transcript import Transcript
+from src.models.user import User
 from src.repositories.transcript_repository import TranscriptRepository
 
 
@@ -14,13 +15,15 @@ class TestTranscriptRepository:
     """Tests for TranscriptRepository CRUD operations."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, test_db: Session) -> None:
+    def setup(self, test_db: Session, test_user: User) -> None:
         """Set up test fixtures."""
         self.db = test_db
+        self.user_id = test_user.id
         self.repo = TranscriptRepository(test_db)
 
     def test_create_transcript(self, sample_transcript_data: dict[str, Any]) -> None:
         """Test creating a new transcript."""
+        sample_transcript_data["user_id"] = self.user_id
         transcript = Transcript(**sample_transcript_data)
         result = self.repo.create(transcript)
 
@@ -35,6 +38,7 @@ class TestTranscriptRepository:
 
     def test_create_generates_uuid(self, sample_transcript_data: dict[str, Any]) -> None:
         """Test that create auto-generates a UUID for the transcript."""
+        sample_transcript_data["user_id"] = self.user_id
         transcript = Transcript(**sample_transcript_data)
         result = self.repo.create(transcript)
 
@@ -73,23 +77,23 @@ class TestTranscriptRepository:
 
     def test_list_all_returns_all_transcripts(self, multiple_transcripts: list[Transcript]) -> None:
         """Test listing all transcripts without filters."""
-        result = self.repo.list_all()
+        result = self.repo.list_all(self.user_id)
 
         assert len(result) == len(multiple_transcripts)
 
     def test_list_all_with_pagination(self, multiple_transcripts: list[Transcript]) -> None:
         """Test pagination with skip and limit."""
         # Get first page
-        page1 = self.repo.list_all(skip=0, limit=2)
+        page1 = self.repo.list_all(self.user_id, skip=0, limit=2)
         assert len(page1) == 2
 
         # Get second page
-        page2 = self.repo.list_all(skip=2, limit=2)
+        page2 = self.repo.list_all(self.user_id, skip=2, limit=2)
         assert len(page2) == 1
 
     def test_list_all_ordered_by_created_at_desc(self, multiple_transcripts: list[Transcript]) -> None:
         """Test that results are ordered by created_at descending."""
-        result = self.repo.list_all()
+        result = self.repo.list_all(self.user_id)
 
         # Verify descending order (most recent first)
         for i in range(len(result) - 1):
@@ -97,28 +101,28 @@ class TestTranscriptRepository:
 
     def test_list_all_with_search_filter(self, multiple_transcripts: list[Transcript]) -> None:
         """Test search filter on title."""
-        result = self.repo.list_all(search="Python")
+        result = self.repo.list_all(self.user_id, search="Python")
 
         assert len(result) == 1
         assert "Python" in result[0].title
 
     def test_list_all_search_in_transcript_text(self, multiple_transcripts: list[Transcript]) -> None:
         """Test search filter in transcript text."""
-        result = self.repo.list_all(search="JavaScript")
+        result = self.repo.list_all(self.user_id, search="JavaScript")
 
         assert len(result) == 1
         assert "JavaScript" in result[0].transcript_text
 
     def test_list_all_search_case_insensitive(self, multiple_transcripts: list[Transcript]) -> None:
         """Test that search is case-insensitive."""
-        result = self.repo.list_all(search="python")
+        result = self.repo.list_all(self.user_id, search="python")
 
         assert len(result) == 1
         assert "Python" in result[0].title
 
     def test_list_all_with_language_filter(self, multiple_transcripts: list[Transcript]) -> None:
         """Test filtering by language."""
-        result = self.repo.list_all(language="es")
+        result = self.repo.list_all(self.user_id, language="es")
 
         assert len(result) == 1
         assert result[0].language == "es"
@@ -129,7 +133,7 @@ class TestTranscriptRepository:
         yesterday = now - timedelta(days=1)
         tomorrow = now + timedelta(days=1)
 
-        result = self.repo.list_all(start_date=yesterday, end_date=tomorrow)
+        result = self.repo.list_all(self.user_id, start_date=yesterday, end_date=tomorrow)
 
         assert len(result) == 1
         assert result[0].id == existing_transcript.id
@@ -138,33 +142,46 @@ class TestTranscriptRepository:
         """Test that date filter excludes records outside range."""
         future = datetime.now(timezone.utc) + timedelta(days=10)
 
-        result = self.repo.list_all(start_date=future)
+        result = self.repo.list_all(self.user_id, start_date=future)
 
         assert len(result) == 0
 
     def test_count_returns_total(self, multiple_transcripts: list[Transcript]) -> None:
         """Test count returns total number of transcripts."""
-        result = self.repo.count()
+        result = self.repo.count(self.user_id)
 
         assert result == len(multiple_transcripts)
 
     def test_count_with_search_filter(self, multiple_transcripts: list[Transcript]) -> None:
         """Test count respects search filter."""
-        result = self.repo.count(search="Python")
+        result = self.repo.count(self.user_id, search="Python")
 
         assert result == 1
 
     def test_count_with_language_filter(self, multiple_transcripts: list[Transcript]) -> None:
         """Test count respects language filter."""
-        result = self.repo.count(language="en")
+        result = self.repo.count(self.user_id, language="en")
 
         assert result == 2  # Two English transcripts
 
     def test_count_empty_database(self) -> None:
         """Test count returns 0 for empty database."""
-        result = self.repo.count()
+        result = self.repo.count(self.user_id)
 
         assert result == 0
+
+    def test_list_all_and_count_exclude_other_users(
+        self,
+        multiple_transcripts: list[Transcript],
+        test_admin: User,
+    ) -> None:
+        """Test that another user sees none of this user's transcripts."""
+        assert self.repo.list_all(test_admin.id) == []
+        assert self.repo.count(test_admin.id) == 0
+
+        # The owning user still sees them all.
+        assert len(self.repo.list_all(self.user_id)) == len(multiple_transcripts)
+        assert self.repo.count(self.user_id) == len(multiple_transcripts)
 
     def test_delete_removes_transcript(self, existing_transcript: Transcript) -> None:
         """Test deleting a transcript."""
@@ -185,6 +202,7 @@ class TestTranscriptRepository:
 
     def test_transcript_segments_stored_as_json(self, sample_transcript_data: dict[str, Any]) -> None:
         """Test that transcript_segments are stored and retrieved correctly as JSON."""
+        sample_transcript_data["user_id"] = self.user_id
         transcript = Transcript(**sample_transcript_data)
         created = self.repo.create(transcript)
 

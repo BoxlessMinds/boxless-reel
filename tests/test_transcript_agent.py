@@ -80,14 +80,14 @@ class TestAgentResponse:
         response = AgentResponse(
             content="This is the response",
             model_used="claude-sonnet-4-5",
-            search_results_used=3,
+            transcript_results_used=3,
         )
 
         assert response.content == "This is the response"
         assert response.citations == []
         assert response.session_id is None
         assert response.model_used == "claude-sonnet-4-5"
-        assert response.search_results_used == 3
+        assert response.transcript_results_used == 3
         assert isinstance(response.created_at, datetime)
 
     def test_response_with_citations(self) -> None:
@@ -111,7 +111,7 @@ class TestAgentResponse:
             citations=[Citation(text="Quote", start_time=5.0)],
             session_id="session-123",
             model_used="gpt-4o",
-            search_results_used=1,
+            transcript_results_used=1,
         )
 
         result = response.to_dict()
@@ -120,7 +120,7 @@ class TestAgentResponse:
         assert len(result["citations"]) == 1
         assert result["session_id"] == "session-123"
         assert result["model_used"] == "gpt-4o"
-        assert result["search_results_used"] == 1
+        assert result["transcript_results_used"] == 1
         assert "created_at" in result
 
 

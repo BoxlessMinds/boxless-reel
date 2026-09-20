@@ -28,6 +28,7 @@ def create_mock_session_info(
     transcript_id: str,
     video_id: str = "dQw4w9WgXcQ",
     video_title: str = "Test Video",
+    thumbnail_url: str | None = None,
     model_provider: str = "anthropic",
 ) -> SessionInfo:
     """Create a mock SessionInfo for testing."""
@@ -36,6 +37,7 @@ def create_mock_session_info(
         transcript_id=transcript_id,
         video_id=video_id,
         video_title=video_title,
+        thumbnail_url=thumbnail_url,
         model_provider=model_provider,
         model_id="claude-sonnet-4-5",
         created_at=datetime.now(timezone.utc),
@@ -58,7 +60,7 @@ def create_mock_query_response(session_id: str = "test-session-123") -> QueryRes
         ],
         session_id=session_id,
         model_used="claude-sonnet-4-5",
-        search_results_used=3,
+        transcript_results_used=3,
         created_at=datetime.now(timezone.utc),
     )
 
@@ -384,6 +386,7 @@ class TestListSessionsEndpoint:
             transcript_id=str(existing_transcript.id),
             video_id="abc123",
             video_title="Another Video",
+            thumbnail_url=None,
             model_provider="openai",
             model_id="gpt-4o",
             created_at=datetime.now(timezone.utc),
