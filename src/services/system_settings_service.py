@@ -1,22 +1,26 @@
-"""Service for system-wide settings with priority chain: DB -> env var -> default."""
+"""Service for system-wide settings with priority chain: DB -> configuration -> default."""
 
 import logging
-import os
 
 from sqlalchemy.orm import Session
 
+from src.config import settings
 from src.repositories.system_settings_repository import SystemSettingsRepository
 
 logger = logging.getLogger(__name__)
 
-# Default values for system settings
+# Fallback values for setting keys that have no Settings field.
+# Any key listed in SETTINGS_FIELD_MAP must keep the same default as its
+# Settings field in src/config.py, so the two never disagree.
 DEFAULTS: dict[str, str] = {
     "registration.require_invitation": "true",
 }
 
-# Mapping from setting keys to environment variable names
-ENV_VAR_MAP: dict[str, str] = {
-    "registration.require_invitation": "REQUIRE_INVITATION_CODE",
+# Mapping from setting keys to Settings field names. Reading the loaded
+# configuration rather than os.environ means a value written only in .env
+# counts, exactly like a real process environment variable.
+SETTINGS_FIELD_MAP: dict[str, str] = {
+    "registration.require_invitation": "require_invitation_code",
 }
 
 
@@ -25,7 +29,7 @@ class SystemSettingsService:
 
     Settings are resolved with a priority chain:
     1. Database value (set by admin via UI)
-    2. Environment variable
+    2. Loaded configuration (a process environment variable or a .env entry)
     3. Hardcoded default
     """
 
@@ -40,7 +44,7 @@ class SystemSettingsService:
     def get_effective_value(self, key: str) -> str | None:
         """Get the effective value for a system setting using the priority chain.
 
-        Priority: Database -> Environment Variable -> Default
+        Priority: Database -> Loaded configuration -> Default
 
         Args:
             key: Setting key.
@@ -53,12 +57,13 @@ class SystemSettingsService:
         if db_value is not None:
             return db_value
 
-        # 2. Check environment variable
-        env_var = ENV_VAR_MAP.get(key)
-        if env_var:
-            env_value = os.environ.get(env_var)
-            if env_value is not None:
-                return env_value.lower()
+        # 2. Check the loaded configuration (process environment or .env)
+        field = SETTINGS_FIELD_MAP.get(key)
+        if field is not None:
+            configured_value = getattr(settings, field, None)
+            if configured_value is not None:
+                # The chain is string-typed, so normalise bools and numbers.
+                return str(configured_value).lower()
 
         # 3. Fall back to default
         return DEFAULTS.get(key)
