@@ -50,6 +50,13 @@ htmlcov/
 *.db
 *.sqlite
 *.sqlite3
+*.db-wal
+*.db-shm
+*.db-journal
+
+# App data (vector store, uploaded documents, watch history)
+data/*
+!data/.gitkeep
 
 # Environment variables
 .env
