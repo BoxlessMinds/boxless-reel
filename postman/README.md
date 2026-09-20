@@ -66,10 +66,9 @@ environment's `email` and `password`.
 
 Registration is **invite-only** by default. The Auth folder handles this: it sends
 *Invite a New User*, then *Register* with that invitation's token. To open
-registration, use **Admin → Update Registration Mode**. `REQUIRE_INVITATION_CODE=false`
-in `.env` does not work for a local uvicorn: the flag is read from the process
-environment, and `.env` values never reach it. Set it in the shell before starting the
-server instead. A value saved through the admin endpoint overrides both.
+registration, either set `REQUIRE_INVITATION_CODE=false` in `.env` (or in the shell)
+and restart the server, or use **Admin → Update Registration Mode**. A value saved
+through the admin endpoint overrides the `.env` setting.
 
 ## Live requests are skipped unless you opt in
 
@@ -201,8 +200,6 @@ Then run the Newman command above from a second terminal.
 
 1. When the frontend is built, unknown `GET /api/...` paths return 200 with a null body
    instead of 404 (`src/main.py:208-209`). This is why the assertions check body shape.
-2. `REQUIRE_INVITATION_CODE` in `.env` doesn't reach a local uvicorn (see
-   [Seeding a first account](#seeding-a-first-account-on-a-fresh-database)).
 
 ## Where this differs from the story's Scope
 
