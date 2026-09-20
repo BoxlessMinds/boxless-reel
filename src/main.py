@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.config import settings
+from src.config import settings, validate_jwt_secret
 
 # Export API keys to os.environ for libraries that read directly from environment
 # (e.g., LanceDB's OpenAI embeddings)
@@ -49,11 +49,11 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler for startup/shutdown events."""
     # Startup
     logger.info("Starting YouTube Transcript API")
-    if settings.jwt_secret_key == "CHANGE_ME_IN_PRODUCTION_USE_OPENSSL_RAND_HEX_32":
-        logger.warning(
-            "JWT_SECRET_KEY is using the default placeholder — "
-            "set a secure value for production (generate with: openssl rand -hex 32)"
-        )
+    try:
+        validate_jwt_secret(settings.jwt_secret_key)
+    except ValueError as exc:
+        logger.error("Startup stopped: %s", exc)
+        raise RuntimeError(str(exc)) from exc
     logger.info("Log level: %s", settings.log_level)
     logger.debug("Database URL: %s", settings.database_url)
     Base.metadata.create_all(bind=engine)

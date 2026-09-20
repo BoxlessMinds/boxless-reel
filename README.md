@@ -31,9 +31,11 @@ The fastest way to get started is with Docker Compose:
 git clone https://github.com/yourusername/boxless-transcripts.git
 cd boxless-transcripts
 
-# Configure environment (add your API keys)
+# Configure environment (add your API keys and a login secret)
 cp .env.example .env.docker
 # Edit .env.docker with your OPENAI_API_KEY and/or ANTHROPIC_API_KEY
+# Also set JWT_SECRET_KEY (required, at least 32 characters). Generate one with:
+#   openssl rand -hex 32
 
 # Start the application
 docker compose up -d
@@ -105,7 +107,8 @@ uv sync
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your settings
+# Edit .env with your settings. JWT_SECRET_KEY is required (at least 32 characters).
+# Generate one with: uv run python -c "import secrets; print(secrets.token_hex(32))"
 
 # Run the API server
 uv run uvicorn src.main:app --reload
@@ -147,7 +150,7 @@ Frontend available at http://localhost:8080
 | `REQUIRE_INVITATION_CODE` | `true` | Require invitation to register (`true`/`false`, can be overridden by admin UI) |
 | `DOCUMENTS_STORAGE_PATH` | `./data/documents` | Document storage directory |
 | `MAX_DOCUMENTS_PER_SESSION` | `5` | Maximum documents per session |
-| `JWT_SECRET_KEY` | *(placeholder)* | **Required for production.** Secret for signing JWT tokens (generate with `openssl rand -hex 32`) |
+| `JWT_SECRET_KEY` | - | **Required.** Secret for signing login tokens, at least 32 characters. The API will not start without it. Generate one with `openssl rand -hex 32` |
 | `ALLOWED_ORIGINS` | `["http://localhost:3000","http://localhost:8080"]` | Allowed CORS origins (JSON list). Add your frontend URL for Docker/production. |
 | `SETTINGS_ENCRYPTION_KEY` | *(auto-generated)* | Fernet key for encrypting API keys in database. Auto-generated if unset (won't persist across restarts). |
 | `GOOGLE_OAUTH_CLIENT_ID` | - | Shared app-wide Google OAuth client ID (required for playlist management) |

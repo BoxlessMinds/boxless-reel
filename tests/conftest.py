@@ -1,5 +1,10 @@
 """Pytest configuration and fixtures for testing."""
 
+import os
+
+# Must be set before src.config is imported. An obviously fake value, used only in tests.
+os.environ.setdefault("JWT_SECRET_KEY", "test-only-not-a-real-secret-" + "0" * 36)
+
 from collections.abc import Generator
 from datetime import datetime
 from typing import Any

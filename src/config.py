@@ -5,6 +5,9 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+JWT_SECRET_MIN_LENGTH = 32
+JWT_SECRET_PLACEHOLDER = "CHANGE_ME_IN_PRODUCTION_USE_OPENSSL_RAND_HEX_32"
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -21,8 +24,8 @@ class Settings(BaseSettings):
 
     # JWT Authentication Configuration
     jwt_secret_key: str = Field(
-        default="CHANGE_ME_IN_PRODUCTION_USE_OPENSSL_RAND_HEX_32",
-        description="Secret key for signing JWT tokens (generate with: openssl rand -hex 32)",
+        default="",
+        description="Secret key for signing JWT tokens (required, at least 32 characters; generate with: openssl rand -hex 32)",
     )
     jwt_algorithm: str = Field(
         default="HS256",
@@ -240,6 +243,33 @@ class Settings(BaseSettings):
         if self.default_llm_provider == "anthropic":
             return bool(self.anthropic_api_key)
         return bool(self.openai_api_key)
+
+
+def validate_jwt_secret(secret: str) -> None:
+    """
+    Check that the JWT secret is set to a usable value.
+
+    Args:
+        secret: The configured JWT_SECRET_KEY value
+
+    Raises:
+        ValueError: If the secret is empty, the example placeholder, or shorter
+            than JWT_SECRET_MIN_LENGTH characters (surrounding whitespace is ignored).
+            The message never includes the secret itself.
+    """
+    trimmed = secret.strip()
+    if (
+        len(trimmed) < JWT_SECRET_MIN_LENGTH
+        or trimmed.upper() == JWT_SECRET_PLACEHOLDER
+    ):
+        raise ValueError(
+            f"JWT_SECRET_KEY must be set to a value of at least {JWT_SECRET_MIN_LENGTH} "
+            "characters. Generate one with either of these commands:\n"
+            "  openssl rand -hex 32\n"
+            '  uv run python -c "import secrets; print(secrets.token_hex(32))"\n'
+            "Then set JWT_SECRET_KEY to the result in your .env file "
+            "(.env.docker when using Docker)."
+        )
 
 
 settings = Settings()
