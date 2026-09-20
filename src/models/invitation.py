@@ -8,6 +8,7 @@ from sqlalchemy import DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
+from src.utils.datetime_utils import as_utc
 
 
 def generate_invitation_token() -> str:
@@ -67,9 +68,9 @@ class Invitation(Base):
     @property
     def is_valid(self) -> bool:
         """Check if the invitation is still valid (pending and not expired)."""
-        return self.status == "pending" and datetime.now(timezone.utc) < self.expires_at
+        return self.status == "pending" and not self.is_expired
 
     @property
     def is_expired(self) -> bool:
-        """Check if the invitation has expired."""
-        return datetime.now(timezone.utc) >= self.expires_at
+        """Check if the invitation has expired (a stored naive value is treated as UTC)."""
+        return datetime.now(timezone.utc) >= as_utc(self.expires_at)

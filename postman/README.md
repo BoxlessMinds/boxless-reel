@@ -199,17 +199,9 @@ Then run the Newman command above from a second terminal.
 
 ## Known API issues (found while building this)
 
-1. **Refresh Tokens, Register (with an invitation) and Validate Invitation Token return
-   500 on SQLite.** `RefreshToken.is_expired` and `Invitation.is_valid` / `is_expired`
-   compare `datetime.now(timezone.utc)` with an `expires_at` that SQLite returns without a
-   timezone (`src/models/refresh_token.py:59`, `src/models/invitation.py:70,75`), which
-   raises `TypeError`. **Until this is fixed, Newman reports 9 failed assertions, three
-   in each of those requests.** The rest of the run is unaffected: Login's access
-   token keeps working, and Admin → Update/Delete User skip because Register can't set
-   `user_id`. With that comparison patched, the whole run passes.
-2. When the frontend is built, unknown `GET /api/...` paths return 200 with a null body
+1. When the frontend is built, unknown `GET /api/...` paths return 200 with a null body
    instead of 404 (`src/main.py:208-209`). This is why the assertions check body shape.
-3. `REQUIRE_INVITATION_CODE` in `.env` doesn't reach a local uvicorn (see
+2. `REQUIRE_INVITATION_CODE` in `.env` doesn't reach a local uvicorn (see
    [Seeding a first account](#seeding-a-first-account-on-a-fresh-database)).
 
 ## Where this differs from the story's Scope

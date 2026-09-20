@@ -8,6 +8,7 @@ from sqlalchemy import DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
+from src.utils.datetime_utils import as_utc
 
 
 def generate_refresh_token() -> str:
@@ -55,8 +56,8 @@ class RefreshToken(Base):
 
     @property
     def is_expired(self) -> bool:
-        """Check if the token has expired."""
-        return datetime.now(timezone.utc) >= self.expires_at
+        """Check if the token has expired (a stored naive value is treated as UTC)."""
+        return datetime.now(timezone.utc) >= as_utc(self.expires_at)
 
     @property
     def is_valid(self) -> bool:
