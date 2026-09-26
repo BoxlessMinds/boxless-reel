@@ -21,12 +21,14 @@ services:
     ports:
       - "127.0.0.1:5050:8000"
     volumes:
-      # Persist SQLite database
-      - ./transcripts.db:/app/transcripts.db
-      # Persist LanceDB vector database
+      # Persist the SQLite database (data/transcripts.db) and the LanceDB vector store
       - ./data:/app/data
     env_file:
       - .env.docker
+    environment:
+      # Keep the database inside the mounted data folder. This overrides any
+      # DATABASE_URL in .env.docker.
+      - DATABASE_URL=sqlite:////app/data/transcripts.db
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -64,5 +66,5 @@ services:
 # - Frontend is accessible at http://localhost:8050
 # - API documentation at http://localhost:5050/docs
 # - Set API keys in .env.docker before starting
-# - Data persists in ./transcripts.db and ./data/ directories
+# - All data persists in the ./data/ folder (the database is data/transcripts.db)
 # =============================================================================

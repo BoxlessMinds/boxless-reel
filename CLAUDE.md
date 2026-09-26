@@ -176,7 +176,7 @@ docker compose ps --format "{{.Name}}" api
 mkdir -p BACKUP
 
 # 3. Copy the database file out of the container into BACKUP with a unique timestamped name
-docker cp <container_name>:/app/transcripts.db ./BACKUP/transcripts_backup_$(date +%Y%m%d_%H%M%S).db
+docker cp <container_name>:/app/data/transcripts.db ./BACKUP/transcripts_backup_$(date +%Y%m%d_%H%M%S).db
 
 # 4. Verify the backup is valid
 sqlite3 ./BACKUP/transcripts_backup_*.db "PRAGMA integrity_check;"
@@ -215,7 +215,7 @@ Mock `youtube-transcript-api` and `yt-dlp` calls in tests to avoid hitting exter
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| DATABASE_URL | `sqlite:///./transcripts.db` | Database connection string |
+| DATABASE_URL | `sqlite:///./transcripts.db` | Database connection string (Docker uses `data/transcripts.db`) |
 | LOG_LEVEL | `INFO` | Logging level |
 
 ## Common Tasks
