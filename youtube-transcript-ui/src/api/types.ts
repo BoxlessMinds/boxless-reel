@@ -240,7 +240,7 @@ export interface AdminUserUpdateRequest {
 }
 
 export interface UserListResponse {
-  items: User[];
+  users: User[];
   total: number;
   page: number;
   page_size: number;
@@ -256,7 +256,7 @@ export interface Invitation {
   status: InvitationStatus;
   expires_at: string;
   created_at: string;
-  invite_link?: string | null;
+  token?: string | null;
 }
 
 export interface InvitationCreateRequest {
@@ -264,7 +264,7 @@ export interface InvitationCreateRequest {
 }
 
 export interface InvitationListResponse {
-  items: Invitation[];
+  invitations: Invitation[];
   total: number;
 }
 
