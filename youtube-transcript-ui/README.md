@@ -46,7 +46,7 @@ npm run dev
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VITE_API_URL` | `http://127.0.0.1:8000` | Backend API URL |
+| `VITE_API_URL` | `http://127.0.0.1:8001` | Backend API URL |
 
 ## Available Scripts
 

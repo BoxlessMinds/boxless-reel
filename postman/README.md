@@ -29,8 +29,7 @@ the file in the request's Body tab.
 
 This is deliberate. The frontend (`VITE_API_URL` in `youtube-transcript-ui/.env`) and the
 Google OAuth redirect URI default (`src/config.py`) both expect the API on **8001**.
-`CLAUDE.md`, the top-level `README.md` and `DOCUMENTATION/API_Reference.md` still say 8000;
-those are out of date. Start the dev server with `--port 8001`, or change `base_url`.
+Start the dev server with `--port 8001`, or change `base_url`.
 If `localhost` won't connect on your machine, use `http://127.0.0.1:8001`
 (uvicorn binds IPv4 only by default). A trailing slash on `base_url` is harmless: the
 collection strips it before every request. Anything after the port (such as `/api`)
