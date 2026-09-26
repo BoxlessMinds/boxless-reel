@@ -167,7 +167,7 @@ Use this if you want to change the code, or you'd rather not use Docker. You'll 
 | [Git](https://git-scm.com/downloads) | any recent | `git --version` | `git version 2.x` |
 | [Python](https://www.python.org/downloads/) | 3.11 or newer | `python --version` (or `python3 --version`) | `Python 3.11.x` or higher |
 | [uv](https://docs.astral.sh/uv/getting-started/installation/) | any recent | `uv --version` | `uv 0.x.y` |
-| [Node.js](https://nodejs.org/) and npm | Node 20 or newer | `node --version` | `v20.x` or higher |
+| [Node.js](https://nodejs.org/) and npm | Node 24 or newer | `node --version` | `v24.x` or higher |
 
 uv is the Python package manager this project uses for everything. Please use it rather than `pip`. If you don't have Python 3.11 installed, uv can download it for you when you run `uv sync`.
 

@@ -28,7 +28,7 @@ If YouTube changes something and transcripts stop working, the cause is usually 
 You'll need:
 
 - Python 3.11 or newer, and [uv](https://docs.astral.sh/uv/). This project uses uv for everything; please don't use `pip` directly.
-- Node.js 20 for the web UI.
+- Node.js 24 for the web UI.
 - ffmpeg, but only if you work on the Whisper transcription fallback.
 
 To install everything and run the tests:
