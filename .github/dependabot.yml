@@ -18,6 +18,9 @@ updates:
       - /youtube-transcript-ui
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
