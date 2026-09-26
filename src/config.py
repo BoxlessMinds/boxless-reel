@@ -249,21 +249,27 @@ def validate_jwt_secret(secret: str) -> None:
     """
     Check that the JWT secret is set to a usable value.
 
+    Surrounding whitespace is ignored. The secret is rejected if it:
+
+    - is shorter than JWT_SECRET_MIN_LENGTH characters (including empty),
+    - contains JWT_SECRET_PLACEHOLDER, in any letter case, or
+    - is one character repeated.
+
     Args:
         secret: The configured JWT_SECRET_KEY value
 
     Raises:
-        ValueError: If the secret is empty, the example placeholder, or shorter
-            than JWT_SECRET_MIN_LENGTH characters (surrounding whitespace is ignored).
-            The message never includes the secret itself.
+        ValueError: If the secret breaks any of the rules above. The message
+            never includes the secret itself.
     """
     trimmed = secret.strip()
     if (
         len(trimmed) < JWT_SECRET_MIN_LENGTH
-        or trimmed.upper() == JWT_SECRET_PLACEHOLDER
+        or JWT_SECRET_PLACEHOLDER in trimmed.upper()
+        or len(set(trimmed)) == 1
     ):
         raise ValueError(
-            f"JWT_SECRET_KEY must be set to a value of at least {JWT_SECRET_MIN_LENGTH} "
+            f"JWT_SECRET_KEY must be set to a random value of at least {JWT_SECRET_MIN_LENGTH} "
             "characters. Generate one with either of these commands:\n"
             "  openssl rand -hex 32\n"
             '  uv run python -c "import secrets; print(secrets.token_hex(32))"\n'
@@ -273,3 +279,6 @@ def validate_jwt_secret(secret: str) -> None:
 
 
 settings = Settings()
+
+# Checked here as well as at startup, so any way of loading the app uses a valid secret
+validate_jwt_secret(settings.jwt_secret_key)
