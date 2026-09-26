@@ -35,10 +35,7 @@ A modern React frontend for extracting, viewing, and querying YouTube transcript
 # Install dependencies
 npm install
 
-# Create environment file
-cp .env.example .env
-
-# Start development server (http://localhost:8080)
+# Start development server (http://localhost:8080; /api goes to the API on port 8001)
 npm run dev
 ```
 
@@ -46,7 +43,7 @@ npm run dev
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VITE_API_URL` | `http://127.0.0.1:8001` | Backend API URL |
+| `VITE_API_URL` | empty (same origin) | Optional. Leave it unset: the app calls `/api` on its own address, which the dev server forwards to the API on port 8001 and nginx forwards in Docker. Set it only when the UI is served from a different address than the API. |
 
 ## Available Scripts
 

@@ -90,8 +90,7 @@ You should see a line of 64 letters and numbers. If `openssl` isn't installed (c
 # Paste the value from step 3
 JWT_SECRET_KEY=paste-your-64-character-value-here
 
-# Lets the web interface (on port 8050) talk to the API
-ALLOWED_ORIGINS=["http://localhost:8050"]
+# The web interface's address, used in invitation links and after connecting YouTube
 FRONTEND_URL=http://localhost:8050
 
 # Recommended: OpenAI is used to index transcripts for search, and either key enables AI chat
@@ -99,7 +98,7 @@ OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
 ```
 
-`JWT_SECRET_KEY` and the two API keys already exist in the file; fill them in where they are. Add `ALLOWED_ORIGINS` and `FRONTEND_URL` at the end. Keep this file private: it holds your secrets, and Git is already set up to ignore it.
+`JWT_SECRET_KEY` and the two API keys already exist in the file; fill them in where they are. Add `FRONTEND_URL` at the end. You don't need to set `ALLOWED_ORIGINS`: the web interface reaches the API through its own address, so the browser never makes a cross-site request. Keep this file private: it holds your secrets, and Git is already set up to ignore it.
 
 **5. Build and start the app.**
 
@@ -145,7 +144,6 @@ These addresses only work from your own computer; the app isn't exposed to your 
 **If something goes wrong**, `docker compose logs api` shows the API's messages. The most common problems:
 
 - *The API keeps restarting and the log mentions `JWT_SECRET_KEY`*: the secret from step 3 is missing or shorter than 32 characters.
-- *The page loads but signing in fails with a network error*: `ALLOWED_ORIGINS` in step 4 is missing. Fix it, then run `docker compose up -d` again.
 - *Your library is empty after upgrading from an older version*: older versions kept the database in `transcripts.db` next to `docker-compose.yml`, and it now lives in the `data` folder. The [changelog](CHANGELOG.md) explains the one-time move.
 
 ## Manual setup
@@ -231,15 +229,7 @@ npm install
 
 This takes a minute and ends with a line like `added 558 packages`. Warnings about deprecated packages are normal.
 
-**2. Tell the web interface where the API is.** Create a file called `.env.local` in the `youtube-transcript-ui` folder containing this one line:
-
-```ini
-VITE_API_URL=http://127.0.0.1:8001
-```
-
-Some parts of the interface (document uploads and watch-history import) look for the API on a different port unless this is set.
-
-**3. Start the development server.**
+**2. Start the development server.** You don't need to tell it where the API is: it forwards every `/api` request to the API on port 8001.
 
 ```bash
 npm run dev
@@ -259,7 +249,7 @@ All settings are environment variables, read from `.env` (manual setup) or `.env
 | `ANTHROPIC_API_KEY` | For AI chat | Your key from [Anthropic](https://console.anthropic.com/settings/keys), to chat using Claude. |
 | `OPENAI_API_KEY` | For AI chat | Your key from [OpenAI](https://platform.openai.com/api-keys), to chat using GPT. It's also used to index every saved transcript for search, and for the Whisper fallback, so set it even if you chat with Claude. Without it, the app currently freezes for several minutes each time you save a transcript. |
 | `DEFAULT_LLM_PROVIDER` | No | Which AI provider to use by default: `anthropic` or `openai`. |
-| `ALLOWED_ORIGINS` | For Docker | Web addresses allowed to call the API, as a list, for example `["http://localhost:8050"]`. The default allows the manual-setup web interface on port 8080. |
+| `ALLOWED_ORIGINS` | No | Web addresses allowed to call the API from a browser, as a list, for example `["https://reel.example.com"]`. The bundled web interface doesn't need it, in Docker or in manual setup. Set it only if you serve the web interface from a different address than the API. |
 | `FRONTEND_URL` | For Docker | The web interface's address. Used in invitation links and after connecting a YouTube account. Defaults to `http://localhost:8080`. |
 | `REQUIRE_INVITATION_CODE` | No | `true` means people need an invitation to sign up; `false` means anyone who can reach the app can register. The example file sets `false`. An admin can change this later in the app. |
 | `SETTINGS_ENCRYPTION_KEY` | Recommended | Key used to encrypt API keys that users save in the app's Settings page. If you don't set it, a new one is made at every start, and saved keys stop working after a restart. Generate one with `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. |
