@@ -27,7 +27,7 @@ the file in the request's Body tab.
 
 ## `base_url` defaults to port 8001, not 8000
 
-This is deliberate. The frontend (`VITE_API_URL` in `youtube-transcript-ui/.env`) and the
+This is deliberate. The frontend's dev-server proxy (`youtube-transcript-ui/vite.config.ts`) and the
 Google OAuth redirect URI default (`src/config.py`) both expect the API on **8001**.
 Start the dev server with `--port 8001`, or change `base_url`.
 If `localhost` won't connect on your machine, use `http://127.0.0.1:8001`

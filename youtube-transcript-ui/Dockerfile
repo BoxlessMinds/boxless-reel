@@ -18,8 +18,9 @@ RUN npm ci
 # Copy source files
 COPY . .
 
-# Build argument for API URL (set at build time)
-ARG VITE_API_URL=http://localhost:5050
+# Optional API address, for serving the UI from a different address than the API.
+# Empty by default: the UI calls /api on its own origin and nginx forwards it.
+ARG VITE_API_URL=
 ENV VITE_API_URL=$VITE_API_URL
 
 # Build the application

@@ -44,8 +44,6 @@ services:
     build:
       context: ./youtube-transcript-ui
       dockerfile: Dockerfile
-      args:
-        VITE_API_URL: http://localhost:5050
     ports:
       - "127.0.0.1:8050:80"
     depends_on:
