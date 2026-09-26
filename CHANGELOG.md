@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **Docker:** the Docker Compose project is now named `boxless-reel`, and the containers are no longer given fixed names, so two copies of the app can run side by side (for example, to test an upgrade). If you already run the app with Docker, do this once: run `docker compose -p boxless-transcript-api down` (without `-v`), then `docker compose up -d --build`. Your data stays in `transcripts.db` and `data/`.
+
 ## [0.1.0] - Unreleased
 
 The first public release of Boxless Reel. The app was built privately from January to September 2026, across 41 pull requests, before being published as open source with a fresh history.
