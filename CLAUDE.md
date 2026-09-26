@@ -20,7 +20,7 @@ This is a RESTful API built with Python FastAPI that extracts, stores, and manag
 uv sync
 
 # Run development server
-uv run uvicorn src.main:app --reload
+uv run uvicorn src.main:app --reload --port 8001
 
 # Run tests
 uv run pytest
