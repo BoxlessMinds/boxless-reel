@@ -24,8 +24,6 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev --extra agents --frozen
       - name: Run tests
-        # Known failures are being fixed; report them without blocking merges.
-        continue-on-error: true
         run: uv run pytest -m "not integration"
 
   frontend:
@@ -45,7 +43,5 @@ jobs:
           cache-dependency-path: youtube-transcript-ui/package-lock.json
       - run: npm ci
       - name: Lint
-        # Known lint errors are being fixed; report them without blocking merges.
-        continue-on-error: true
         run: npm run lint
       - run: npm run build
