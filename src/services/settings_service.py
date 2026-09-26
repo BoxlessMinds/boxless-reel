@@ -1,12 +1,12 @@
 """Service for managing application settings."""
 
 import logging
-import os
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from src.agents.config import get_agent_config
+from src.config import settings as app_settings
 from src.repositories.settings_repository import SettingsRepository
 
 logger = logging.getLogger(__name__)
@@ -23,10 +23,14 @@ class SettingsService:
     """
     Service layer for settings operations.
 
-    Implements priority order: Database -> Environment Variables -> Defaults
+    Implements priority order: Database -> Loaded configuration -> Defaults.
+    The loaded configuration is whatever pydantic-settings resolved, so it
+    covers both a real process environment variable and a `.env` entry.
     """
 
-    # Default values for all settings
+    # Fallback values for setting keys that have no Settings field.
+    # Any key also listed in SETTINGS_FIELD_MAP must keep the same default as
+    # its Settings field in src/config.py, so the two never disagree.
     DEFAULTS: dict[str, str] = {
         "llm.default_provider": "anthropic",
         "llm.default_model": "claude-sonnet-4-5",
@@ -38,19 +42,21 @@ class SettingsService:
         "search.web_search_max_results": "5",
     }
 
-    # Mapping from setting keys to environment variable names
-    ENV_VAR_MAP: dict[str, str] = {
-        "llm.anthropic_api_key": "ANTHROPIC_API_KEY",
-        "llm.openai_api_key": "OPENAI_API_KEY",
-        "llm.default_provider": "DEFAULT_LLM_PROVIDER",
-        "llm.default_model": "DEFAULT_MODEL",
-        "embedding.model": "EMBEDDING_MODEL",
-        "agent.max_context_chunks": "MAX_CONTEXT_CHUNKS",
-        "agent.chunk_size": "CHUNK_SIZE",
-        "agent.chunk_overlap": "CHUNK_OVERLAP",
-        "search.tavily_api_key": "TAVILY_API_KEY",
-        "search.web_search_enabled": "WEB_SEARCH_ENABLED",
-        "search.web_search_max_results": "WEB_SEARCH_MAX_RESULTS",
+    # Mapping from setting keys to Settings field names. Reading the loaded
+    # configuration rather than os.environ means a value written only in .env
+    # counts, exactly like a real process environment variable.
+    SETTINGS_FIELD_MAP: dict[str, str] = {
+        "llm.anthropic_api_key": "anthropic_api_key",
+        "llm.openai_api_key": "openai_api_key",
+        "llm.default_provider": "default_llm_provider",
+        "llm.default_model": "default_model",
+        "embedding.model": "embedding_model",
+        "agent.max_context_chunks": "max_context_chunks",
+        "agent.chunk_size": "chunk_size",
+        "agent.chunk_overlap": "chunk_overlap",
+        "search.tavily_api_key": "tavily_api_key",
+        "search.web_search_enabled": "web_search_enabled",
+        "search.web_search_max_results": "web_search_max_results",
     }
 
     # Category mapping for settings
@@ -81,7 +87,7 @@ class SettingsService:
         """
         Get the effective value for a setting key.
 
-        Priority: Database (user-specific) -> Environment Variable -> Default
+        Priority: Database (user-specific) -> Loaded configuration -> Default
 
         Args:
             key: The setting key (e.g., "llm.anthropic_api_key").
@@ -96,19 +102,41 @@ class SettingsService:
             logger.debug("Using database value for %s (user=%s)", key, user_id)
             return db_value
 
-        # 2. Try environment variable
-        env_var = self.ENV_VAR_MAP.get(key)
-        if env_var:
-            env_value = os.environ.get(env_var)
-            if env_value:
-                logger.debug("Using environment variable %s for %s", env_var, key)
-                return env_value
+        # 2. Try the loaded configuration (process environment or .env)
+        field = self.SETTINGS_FIELD_MAP.get(key)
+        if field is not None:
+            configured_value = getattr(app_settings, field, None)
+            # Test for "not set" before converting: str(None) is the truthy
+            # "None", and an empty string (an unset key in .env) means unset.
+            # A real False or 0 must still count, so this is not a truthiness test.
+            if configured_value is not None and configured_value != "":
+                logger.debug("Using configured value of %s for %s", field, key)
+                return self._to_chain_string(configured_value)
 
         # 3. Return default
         default = self.DEFAULTS.get(key)
         if default:
             logger.debug("Using default value for %s", key)
         return default
+
+    @staticmethod
+    def _to_chain_string(value: Any) -> str:
+        """
+        Convert a configured value to the string form the chain uses.
+
+        Booleans become "true"/"false" to match what the database stores.
+        Everything else keeps its case, since model names and API keys are
+        case-sensitive.
+
+        Args:
+            value: The value read from the loaded configuration.
+
+        Returns:
+            The value as a string.
+        """
+        if isinstance(value, bool):
+            return str(value).lower()
+        return str(value)
 
     def get_all_effective_values(self, user_id: str) -> dict[str, str | None]:
         """
@@ -121,7 +149,7 @@ class SettingsService:
             Dictionary of all setting keys to their effective values.
         """
         result: dict[str, str | None] = {}
-        all_keys = set(self.DEFAULTS.keys()) | set(self.ENV_VAR_MAP.keys())
+        all_keys = set(self.DEFAULTS.keys()) | set(self.SETTINGS_FIELD_MAP.keys())
         for key in all_keys:
             result[key] = self.get_effective_value(key, user_id)
         return result
@@ -135,7 +163,7 @@ class SettingsService:
             user_id: UUID of the user to check for.
 
         Returns:
-            True if the API key is configured (in DB or env var).
+            True if the API key is configured (in DB or the loaded configuration).
         """
         # Handle Tavily separately as it's a search provider
         if provider == "tavily":
