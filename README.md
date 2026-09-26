@@ -118,8 +118,8 @@ docker compose up -d --build
 The first build downloads and installs everything, so it takes several minutes. It finishes with lines like these:
 
 ```text
- ✔ Container boxless-api       Healthy
- ✔ Container boxless-frontend  Started
+ ✔ Container boxless-reel-api-1       Healthy
+ ✔ Container boxless-reel-frontend-1  Started
 ```
 
 **7. Check the API is running.**

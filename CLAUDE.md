@@ -170,7 +170,7 @@ def get_db():
 
 ```bash
 # 1. Find the running container
-docker ps --filter "ancestor=transcript-api" --format "{{.Names}}"
+docker compose ps --format "{{.Name}}" api
 
 # 2. Ensure the BACKUP folder exists
 mkdir -p BACKUP
