@@ -1,14 +1,14 @@
 # =============================================================================
-# YouTube Transcript API - Docker Compose Configuration
+# Boxless Reel - Docker Compose Configuration
 # =============================================================================
 # Usage:
-#   docker-compose up --build        # Build and start all services
-#   docker-compose up -d             # Start in detached mode
-#   docker-compose down              # Stop all services
-#   docker-compose logs -f           # Follow logs
+#   docker compose up --build        # Build and start all services
+#   docker compose up -d             # Start in detached mode
+#   docker compose down              # Stop all services
+#   docker compose logs -f           # Follow logs
 # =============================================================================
 
-name: boxless-transcript-api
+name: boxless-reel
 
 services:
   # ---------------------------------------------------------------------------
@@ -18,7 +18,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: boxless-api
     ports:
       - "127.0.0.1:5050:8000"
     volumes:
@@ -45,7 +44,6 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: http://localhost:5050
-    container_name: boxless-frontend
     ports:
       - "127.0.0.1:8050:80"
     depends_on:

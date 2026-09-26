@@ -11,7 +11,7 @@ Usage:
     uv run python scripts/migrate_add_documents.py
 
     # Or in Docker:
-    docker exec boxless-api python scripts/migrate_add_documents.py
+    docker compose exec api python scripts/migrate_add_documents.py
 """
 
 import sys

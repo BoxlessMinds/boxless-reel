@@ -181,7 +181,7 @@ throwaway user and then deletes it, writes your per-user settings
 (`max_context_chunks`, `web_search_*`), saves the registration mode unchanged, imports
 the sample watch history, and creates dry-run plans. Run it against a
 **throwaway database**. Never run it against your real `transcripts.db`, and never
-against the Docker instance (`boxless-api`, port 5050). To set up a throwaway server,
+against the Docker instance (the `api` service, port 5050). To set up a throwaway server,
 run these from the repo root in one PowerShell session:
 
 ```powershell

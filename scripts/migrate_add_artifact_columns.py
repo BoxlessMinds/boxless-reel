@@ -23,7 +23,7 @@ Usage:
     uv run python scripts/migrate_add_artifact_columns.py
 
     # Or in Docker:
-    docker exec boxless-api python scripts/migrate_add_artifact_columns.py
+    docker compose exec api python scripts/migrate_add_artifact_columns.py
 """
 
 import sys

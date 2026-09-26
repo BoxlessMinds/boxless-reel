@@ -10,7 +10,7 @@ Usage:
     uv run python scripts/migrate_add_source_column.py
 
     # Or in Docker:
-    docker exec boxless-api python scripts/migrate_add_source_column.py
+    docker compose exec api python scripts/migrate_add_source_column.py
 """
 
 import sys
