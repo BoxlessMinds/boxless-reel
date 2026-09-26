@@ -101,15 +101,7 @@ ANTHROPIC_API_KEY=
 
 `JWT_SECRET_KEY` and the two API keys already exist in the file; fill them in where they are. Add `ALLOWED_ORIGINS` and `FRONTEND_URL` at the end. Keep this file private: it holds your secrets, and Git is already set up to ignore it.
 
-**5. Create an empty database file.** Docker stores your library in a file called `transcripts.db` in this folder. It must exist before the first start, or Docker creates a folder with that name instead and the app can't open its database.
-
-```bash
-touch transcripts.db
-```
-
-In PowerShell, use `New-Item transcripts.db -ItemType File` instead. Either way it prints nothing (PowerShell prints a one-line file listing).
-
-**6. Build and start the app.**
+**5. Build and start the app.**
 
 ```bash
 docker compose up -d --build
@@ -122,7 +114,7 @@ The first build downloads and installs everything, so it takes several minutes. 
  ✔ Container boxless-reel-frontend-1  Started
 ```
 
-**7. Check the API is running.**
+**6. Check the API is running.**
 
 ```bash
 curl http://localhost:5050/health
@@ -130,7 +122,7 @@ curl http://localhost:5050/health
 
 You should see `{"status":"healthy"}`.
 
-**8. Create your admin account.** There's no default login. Create the first account, which is the admin, from the command line (use your own email address):
+**7. Create your admin account.** There's no default login. Create the first account, which is the admin, from the command line (use your own email address):
 
 ```bash
 docker compose exec api python -m src.cli create-admin --email you@example.com
@@ -138,7 +130,7 @@ docker compose exec api python -m src.cli create-admin --email you@example.com
 
 It asks for a password twice (at least 8 characters; nothing shows as you type), then prints `Admin user created successfully!`.
 
-**9. Open the app.** Go to <http://localhost:8050> in your browser and sign in with the account you just made.
+**8. Open the app.** Go to <http://localhost:8050> in your browser and sign in with the account you just made.
 
 | What | Address |
 |---|---|
@@ -148,13 +140,13 @@ It asks for a password twice (at least 8 characters; nothing shows as you type),
 
 These addresses only work from your own computer; the app isn't exposed to your network.
 
-**To stop the app**, run `docker compose down`. Your library is kept in `transcripts.db` and the `data` folder, and comes back next time you run `docker compose up -d`.
+**To stop the app**, run `docker compose down`. Your library is kept in the `data` folder, and comes back next time you run `docker compose up -d`.
 
 **If something goes wrong**, `docker compose logs api` shows the API's messages. The most common problems:
 
 - *The API keeps restarting and the log mentions `JWT_SECRET_KEY`*: the secret from step 3 is missing or shorter than 32 characters.
 - *The page loads but signing in fails with a network error*: `ALLOWED_ORIGINS` in step 4 is missing. Fix it, then run `docker compose up -d` again.
-- *The log says `unable to open database file`*: `transcripts.db` didn't exist before the first start, so Docker made a folder with that name. Run `docker compose down`, delete the `transcripts.db` folder, then repeat steps 5 and 6.
+- *Your library is empty after upgrading from an older version*: older versions kept the database in `transcripts.db` next to `docker-compose.yml`, and it now lives in the `data` folder. The [changelog](CHANGELOG.md) explains the one-time move.
 
 ## Manual setup
 

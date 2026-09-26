@@ -15,7 +15,7 @@ See CLAUDE.md "Docker Database Backup" for the exact steps:
 
     docker ps --filter "ancestor=transcript-api" --format "{{.Names}}"
     mkdir -p BACKUP
-    docker cp <container_name>:/app/transcripts.db ./BACKUP/transcripts_backup_$(date +%Y%m%d_%H%M%S).db
+    docker cp <container_name>:/app/data/transcripts.db ./BACKUP/transcripts_backup_$(date +%Y%m%d_%H%M%S).db
     sqlite3 ./BACKUP/transcripts_backup_*.db "PRAGMA integrity_check;"
 
 Usage:
