@@ -36,12 +36,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "pytest-cov>=4.1.0",
-    "httpx>=0.26.0",
-]
 # LLM provider optional dependencies
 openai = ["openai>=1.0.0"]
 anthropic = ["anthropic>=0.30.0"]
@@ -58,8 +52,9 @@ build-backend = "hatchling.build"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "-m 'not integration'"
 markers = [
-    "integration: marks tests as integration tests (require API keys)",
+    "integration: marks tests as integration tests (require API keys; run with -m integration)",
 ]
 
 [tool.coverage.run]
@@ -71,4 +66,7 @@ packages = ["src"]
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.26.0",
 ]
