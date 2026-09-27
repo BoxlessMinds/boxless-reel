@@ -224,7 +224,7 @@ cd youtube-transcript-ui
 npm install
 ```
 
-This takes a minute and ends with a line like `added 558 packages`. Warnings about deprecated packages are normal.
+This takes a minute and prints a line like `added 558 packages`. Warnings about deprecated packages or skipped install scripts are normal; you don't need to act on them. The API terminal may also print `WatchFiles detected changes ... Reloading` while this runs, which is harmless.
 
 **2. Start the development server.** You don't need to tell it where the API is: it forwards every `/api` request to the API on port 8001.
 
