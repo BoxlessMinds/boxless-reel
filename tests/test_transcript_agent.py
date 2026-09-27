@@ -578,6 +578,109 @@ class TestTranscriptQueryAgent:
         assert history == []
 
 
+class TestTranscriptQueryAgentWithRealAgno:
+    """Tests that build the real agno Agent and SqliteDb, so agno API changes show up.
+
+    The model is built with fake keys and never called, so nothing reaches the network.
+    The session store is a temporary file, never data/agent_sessions.db.
+    """
+
+    SESSION_ID = "real-agno-session"
+
+    @pytest.fixture
+    def agent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> TranscriptQueryAgent:
+        """A TranscriptQueryAgent backed by a real agno Agent and a temporary session store."""
+        monkeypatch.setattr(
+            TranscriptQueryAgent,
+            "DEFAULT_SESSION_DB",
+            str(tmp_path / "agent_sessions.db"),
+        )
+        config = AgentConfig(
+            openai_api_key="test-openai-key",
+            anthropic_api_key="test-anthropic-key",
+            default_llm_provider="anthropic",
+            default_model="claude-sonnet-4-5",
+            embedding_model="text-embedding-3-small",
+            lancedb_uri=str(tmp_path / "lancedb"),
+            max_context_chunks=10,
+            chunk_size=500,
+            chunk_overlap=100,
+        )
+        with patch("src.agents.transcript_agent.TranscriptKnowledgeBase") as mock_kb_class:
+            mock_kb_class.return_value.is_indexed.return_value = True
+            return TranscriptQueryAgent(
+                transcript_id="test-id",
+                video_title="Test Video",
+                video_id="abc123",
+                session_id=self.SESSION_ID,
+                config=config,
+            )
+
+    def test_agent_keeps_history_in_session_store(
+        self, agent: TranscriptQueryAgent, tmp_path: Path
+    ) -> None:
+        """The agno Agent is wired to load earlier turns from the session store."""
+        from agno.db.sqlite import SqliteDb
+
+        inner = agent._agent
+        assert isinstance(inner.db, SqliteDb)
+        assert inner.db.db_file == str(tmp_path / "agent_sessions.db")
+        assert inner.session_id == self.SESSION_ID
+        assert inner.add_history_to_context is True
+        assert inner.num_history_runs == 10
+
+    def test_get_session_history_reads_saved_turns(
+        self, agent: TranscriptQueryAgent
+    ) -> None:
+        """Messages saved by agno for this session come back through get_session_history."""
+        from agno.models.message import Message
+        from agno.run.agent import RunOutput
+        from agno.run.base import RunStatus
+        from agno.session import AgentSession
+
+        db = agent._agent.db
+        db.upsert_session(
+            AgentSession(session_id=self.SESSION_ID, session_data={}, created_at=1)
+        )
+        # A finished run, shaped like the ones agno's Agent saves after each turn.
+        db.upsert_run(
+            RunOutput(
+                run_id="run-1",
+                agent_id="transcript-assistant",
+                session_id=self.SESSION_ID,
+                status=RunStatus.completed,
+                messages=[
+                    Message(role="user", content="What is covered?"),
+                    Message(role="assistant", content="Python basics."),
+                ],
+            ),
+            session_id=self.SESSION_ID,
+            run_index=0,
+        )
+
+        history = agent.get_session_history()
+
+        assert history == [
+            {"role": "user", "content": "What is covered?"},
+            {"role": "assistant", "content": "Python basics."},
+        ]
+
+    def test_add_message_to_history_does_not_fail_silently(
+        self, agent: TranscriptQueryAgent, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Restoring a message must not hit a broken agno import or method.
+
+        add_message_to_history only logs its errors, so a moved agno import would
+        otherwise go unnoticed. Any warning it logs fails this test.
+        """
+        with caplog.at_level("WARNING", logger="src.agents.transcript_agent"):
+            agent.add_message_to_history("user", "Earlier question")
+
+        assert caplog.records == []
+
+
 class TestExceptions:
     """Tests for agent exceptions."""
 
