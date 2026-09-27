@@ -1,4 +1,4 @@
-# Boxless Transcripts - Frontend
+# Boxless Reel - Web Interface
 
 A modern React frontend for extracting, viewing, and querying YouTube transcripts with AI-powered Q&A.
 
@@ -25,9 +25,8 @@ A modern React frontend for extracting, viewing, and querying YouTube transcript
 
 ## Prerequisites
 
-- Node.js 18+
-- npm or yarn
-- Backend API running (see main project README)
+- Node.js 24+ and npm
+- The API running (see the [main README](../README.md))
 
 ## Development Setup
 
@@ -62,6 +61,9 @@ npm run preview
 
 # Lint code
 npm run lint
+
+# Type-check without building
+npm run typecheck
 ```
 
 ## Project Structure
@@ -69,18 +71,22 @@ npm run lint
 ```
 src/
 ├── api/                    # API client layer
+│   ├── baseUrl.ts          # Where API calls go (same origin by default)
 │   ├── client.ts           # Base HTTP client
 │   ├── types.ts            # TypeScript interfaces
 │   ├── transcripts.ts      # Transcript API endpoints
-│   └── sessions.ts         # Session/Chat API endpoints
+│   ├── sessions.ts         # Session/Chat API endpoints
+│   └── ...                 # One file per API area
 ├── components/
 │   ├── chat/               # Chat components
 │   ├── layout/             # Layout components
 │   ├── transcript/         # Transcript components
 │   └── ui/                 # shadcn/ui components
+├── contexts/               # React context providers
 ├── hooks/                  # Custom React hooks
 ├── pages/                  # Page components
 ├── lib/                    # Utility functions
+├── types/                  # Shared TypeScript types
 └── utils/                  # Formatters and helpers
 ```
 
@@ -97,6 +103,6 @@ This serves the production build via Nginx on port 8050.
 
 ## Related Documentation
 
-- [UI Architecture](../DOCUMENTATION/UI_Architecture.md) - Detailed architecture documentation
-- [API Reference](../DOCUMENTATION/API_Reference.md) - Backend API endpoints
-- [Getting Started](../DOCUMENTATION/Getting_Started.md) - Full project setup guide
+- [Main README](../README.md) - Full setup guide and settings
+- [Contributing](../CONTRIBUTING.md) - How to propose changes
+- API reference - open `/docs` on your running API, for example <http://localhost:5050/docs> with Docker
