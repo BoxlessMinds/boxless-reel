@@ -4,7 +4,7 @@
 
 ## How was it tested?
 
-<!-- e.g. `uv run pytest -m "not integration"`, manual steps. -->
+<!-- e.g. `uv run pytest`, manual steps. -->
 
 ## Checklist
 
