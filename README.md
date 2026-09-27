@@ -90,15 +90,12 @@ You should see a line of 64 letters and numbers. If `openssl` isn't installed (c
 # Paste the value from step 3
 JWT_SECRET_KEY=paste-your-64-character-value-here
 
-# The web interface's address, used in invitation links and after connecting YouTube
-FRONTEND_URL=http://localhost:8050
-
 # Recommended: OpenAI is used to index transcripts for search, and either key enables AI chat
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
 ```
 
-`JWT_SECRET_KEY` and the two API keys already exist in the file; fill them in where they are. Add `FRONTEND_URL` at the end. You don't need to set `ALLOWED_ORIGINS`: the web interface reaches the API through its own address, so the browser never makes a cross-site request. Keep this file private: it holds your secrets, and Git is already set up to ignore it.
+All three lines already exist in the file; fill them in where they are, and don't add new ones. Only `JWT_SECRET_KEY` is required. The other settings already have values that work for Docker, including `FRONTEND_URL=http://localhost:8050`, so leave them as they are. You don't need to set `ALLOWED_ORIGINS`: the web interface reaches the API through its own address, so the browser never makes a cross-site request. Keep this file private: it holds your secrets, and Git is already set up to ignore it.
 
 **5. Build and start the app.**
 
@@ -290,7 +287,7 @@ The [`postman`](postman) folder has a ready-made collection for [Postman](https:
 
 Contributions are welcome, from typo fixes to new features.
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) explains how to set up for development, run the tests and open a pull request.
+- [CONTRIBUTING.md](CONTRIBUTING.md) explains how to set up for development, run the tests and open a pull request. `uv run pytest` runs the free tests only; the `integration` tests call paid APIs, and CONTRIBUTING.md explains how to run them on purpose.
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) sets out how we treat each other.
 - [SECURITY.md](SECURITY.md) explains how to report a security problem privately. Please don't use public issues for those.
 - [CHANGELOG.md](CHANGELOG.md) lists what has changed in each release.
