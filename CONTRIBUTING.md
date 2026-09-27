@@ -40,6 +40,9 @@ uv sync
 # Run the test suite (skips tests that call paid APIs)
 uv run pytest
 
+# Check the Python code for common mistakes
+uv run ruff check .
+
 # Web UI
 cd youtube-transcript-ui
 npm install
@@ -48,6 +51,8 @@ npm run build
 ```
 
 See the README for how to configure and run the app locally.
+
+`uv run ruff check . --fix` fixes most lint issues, such as import order, for you. CI runs the same check on every pull request.
 
 The unit tests mock YouTube and the LLM providers, so you don't need API keys to run them. Tests marked `integration` call real, paid APIs, so `uv run pytest` skips them. To run them on purpose, put your own API keys in `.env` and run `uv run pytest -m integration`. They cost money each time they run.
 

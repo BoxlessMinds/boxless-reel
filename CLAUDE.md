@@ -31,6 +31,9 @@ uv run pytest -m integration
 # Run tests with coverage
 uv run pytest --cov=src
 
+# Lint the Python code (add --fix to fix most issues automatically)
+uv run ruff check .
+
 # Add a new dependency
 uv add <package-name>
 

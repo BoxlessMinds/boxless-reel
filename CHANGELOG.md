@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Linting:** the Python code is now checked with ruff (`uv run ruff check .`), and CI runs it on every pull request.
+
 ### Changed
 
 - **Tests:** `uv sync` now installs the test tools, and `uv run pytest` skips the integration tests (which call paid APIs) unless you ask for them with `uv run pytest -m integration`. If you used `uv sync --extra dev`, drop the `--extra dev`. The project now pins Python 3.11 in `.python-version`, to match the Docker image.
