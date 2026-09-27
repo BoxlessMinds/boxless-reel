@@ -12,7 +12,6 @@ from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import httpx
 import httpx2
 import openai
 import pytest
@@ -147,24 +146,40 @@ class TestOpenAIKeyValidation:
 
 
 class TestAgnoOpenAIChat:
-    """The agent model path: agno hands the SDK a legacy ``httpx`` client."""
+    """The agent model path: agno builds the openai client with the SDK's own HTTP client."""
 
-    def test_chat_completion_through_legacy_httpx_client(self):
-        """The SDK still accepts agno's ``httpx.Client`` and parses the response."""
+    def test_chat_completion_through_agno_client_params(self):
+        """agno's client settings work with the SDK, and it no longer injects an HTTP client."""
         from agno.models.openai import OpenAIChat
 
-        def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json=CHAT_COMPLETION_BODY)
+        client_kwargs: dict[str, Any] = {}
 
-        model = OpenAIChat(
-            id="gpt-4o-mini",
-            api_key="sk-test",
-            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
-        )
-        client = model.get_client()
+        def handler(request: httpx2.Request) -> httpx2.Response:
+            return httpx2.Response(200, json=CHAT_COMPLETION_BODY)
+
+        def fake_client(**kwargs: Any) -> openai.OpenAI:
+            client_kwargs.update(kwargs)
+            kwargs["max_retries"] = 0
+            return REAL_OPENAI(
+                http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
+                **kwargs,
+            )
+
+        model = OpenAIChat(id="gpt-4o-mini", api_key="sk-test")
+        with patch("agno.models.openai.chat.OpenAIClient", side_effect=fake_client):
+            client = model.get_client()
 
         completion = client.chat.completions.create(
             model="gpt-4o-mini", messages=[{"role": "user", "content": "hi"}]
         )
 
+        assert "http_client" not in client_kwargs
         assert completion.choices[0].message.content == "hi"
+
+    def test_default_client_uses_httpx2(self):
+        """Without the patch, the client agno builds sends requests through httpx2."""
+        from agno.models.openai import OpenAIChat
+
+        client = OpenAIChat(id="gpt-4o-mini", api_key="sk-test").get_client()
+
+        assert isinstance(client._client, httpx2.Client)

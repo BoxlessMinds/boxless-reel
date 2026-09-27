@@ -12,10 +12,10 @@ dependencies = [
     "yt-dlp>=2026.8.19",
     "pydantic-settings>=2.0.0",
     # Agent framework dependencies
-    "agno>=1.1.0",
+    "agno>=3.0.11",
     "lancedb>=0.6.0",
     "pandas>=2.3.3",
-    "anthropic>=0.75.0",
+    "anthropic>=1.8.0",
     "cryptography>=46.0.3",
     # Auth dependencies
     "python-jose[cryptography]>=3.3.0",
@@ -38,11 +38,11 @@ dependencies = [
 [project.optional-dependencies]
 # LLM provider optional dependencies
 openai = ["openai>=1.0.0"]
-anthropic = ["anthropic>=0.30.0"]
+anthropic = ["anthropic>=1.8.0"]
 # Convenience group for all agent features
 agents = [
     "openai>=1.0.0",
-    "anthropic>=0.30.0",
+    "anthropic>=1.8.0",
 ]
 
 [build-system]
