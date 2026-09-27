@@ -1,15 +1,12 @@
 """Tests for API endpoints."""
 
-from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
 from src.models.transcript import Transcript
 from src.services.exceptions import (
     InvalidVideoIdError,
-    TranscriptAlreadyExistsError,
     TranscriptNotAvailableError,
     VideoNotFoundError,
     YouTubeServiceError,

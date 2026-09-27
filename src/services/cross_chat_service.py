@@ -1,7 +1,6 @@
 """Cross-chat service for querying across multiple transcript sessions."""
 
 import logging
-import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -29,7 +28,6 @@ from src.services.exceptions import (
     CrossChatValidationError,
     IndexingError,
     QueryExecutionError,
-    SessionNotFoundError,
 )
 
 logger = logging.getLogger(__name__)
@@ -344,7 +342,7 @@ class CrossChatService:
             CrossChatSessionNotFoundError: If session not found.
             QueryExecutionError: If query fails.
         """
-        db_session = self._get_or_restore_session(cross_chat_id, user_id)
+        self._get_or_restore_session(cross_chat_id, user_id)
 
         if cross_chat_id not in self._agents:
             raise CrossChatSessionNotFoundError(

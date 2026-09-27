@@ -10,8 +10,8 @@ mocked via a stand-in for `GoogleAuthService`.
 """
 
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest

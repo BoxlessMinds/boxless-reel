@@ -6,7 +6,6 @@ import os
 os.environ.setdefault("JWT_SECRET_KEY", "test-only-not-a-real-secret-" + "0" * 36)
 
 from collections.abc import Generator
-from datetime import datetime
 from typing import Any
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -18,12 +17,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.database import Base, get_db
+from src.dependencies.auth import get_current_user
 from src.main import app
 from src.models.transcript import Transcript
 from src.models.user import User
-from src.dependencies.auth import get_current_user
 from src.services import AgentService, YouTubeService
-from src.services.agent_service import _sessions_registry, _agents_registry
+from src.services.agent_service import _agents_registry, _sessions_registry
 
 # Pre-computed bcrypt hash for "testpassword123" - avoids bcrypt compatibility issues in tests
 # This is equivalent to bcrypt.hashpw(b"testpassword123", bcrypt.gensalt())

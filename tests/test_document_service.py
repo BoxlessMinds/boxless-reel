@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session as DBSession
 
 from src.agents.knowledge import DocumentKnowledgeBase
 from src.models.document import Document
-from src.models.session import Message, Session as ChatSession
+from src.models.session import Message
+from src.models.session import Session as ChatSession
 from src.models.transcript import Transcript
 from src.models.user import User
 from src.repositories.document_repository import DocumentRepository

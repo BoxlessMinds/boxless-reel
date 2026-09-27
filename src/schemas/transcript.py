@@ -5,7 +5,6 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 # Regex pattern for YouTube URL validation
 # Supports: youtube.com/watch?v=, youtu.be/, with optional params
 YOUTUBE_URL_PATTERN = re.compile(

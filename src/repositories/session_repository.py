@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session as DBSession, joinedload
+from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.orm import joinedload
 
 from src.models.session import Message, Session
 

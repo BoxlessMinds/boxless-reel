@@ -4,7 +4,7 @@
 
 ## How was it tested?
 
-<!-- e.g. `uv run pytest`, manual steps. -->
+<!-- e.g. `uv run ruff check .`, `uv run pytest`, manual steps. -->
 
 ## Checklist
 

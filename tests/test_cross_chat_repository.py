@@ -2,17 +2,11 @@
 
 from uuid import uuid4
 
-import pytest
-from sqlalchemy.orm import Session as DBSession
-
 from src.models.cross_chat_session import (
-    CrossChatMessage,
     CrossChatSession,
-    CrossChatSessionReference,
 )
 from src.models.session import Session as ChatSession
 from src.models.transcript import Transcript
-from src.models.user import User
 from src.repositories.cross_chat_repository import CrossChatRepository
 
 

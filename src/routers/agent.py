@@ -6,9 +6,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
+from src.config import settings
 from src.database import get_db
 from src.dependencies.auth import CurrentUser
-from src.config import settings
 from src.schemas import (
     CreateSessionRequest,
     DocumentListItem,

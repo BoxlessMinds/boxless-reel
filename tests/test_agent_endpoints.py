@@ -18,7 +18,6 @@ from src.services import (
 )
 from src.services.agent_service import QueryResponse, SessionInfo
 
-
 # =============================================================================
 # Test Fixtures
 # =============================================================================

@@ -1,6 +1,5 @@
 """Tests for WhisperTranscriptionService and Whisper fallback orchestration."""
 
-import os
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest

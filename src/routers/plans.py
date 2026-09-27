@@ -27,7 +27,10 @@ from src.services.playlist_planning_service import (
     PlaylistPlanningService,
     get_playlist_planning_service,
 )
-from src.services.youtube_data_service import QuotaExceededError, YouTubeDataServiceError
+from src.services.youtube_data_service import (
+    QuotaExceededError,
+    YouTubeDataServiceError,
+)
 
 logger = logging.getLogger(__name__)
 

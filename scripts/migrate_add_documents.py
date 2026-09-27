@@ -20,9 +20,9 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect
 
-from src.database import Base, engine
+from src.database import engine
 from src.models import Document  # Import to register the model
 
 

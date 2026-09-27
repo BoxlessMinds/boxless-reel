@@ -1,6 +1,5 @@
 """Tests for transcript knowledge base components."""
 
-import tempfile
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -14,7 +13,6 @@ from src.agents.knowledge import (
     TranscriptChunker,
     TranscriptKnowledgeBase,
 )
-from src.agents.knowledge.exceptions import IndexingError
 
 
 class TestTranscriptChunk:
