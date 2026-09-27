@@ -7,6 +7,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 JWT_SECRET_MIN_LENGTH = 32
 JWT_SECRET_PLACEHOLDER = "CHANGE_ME_IN_PRODUCTION_USE_OPENSSL_RAND_HEX_32"
+JWT_SECRET_MIN_DISTINCT_CHARACTERS = 10
+# Example values shown in the documentation; keep in step with README.md
+JWT_SECRET_EXAMPLE_VALUES = ("paste-your-64-character-value-here",)
 
 
 class Settings(BaseSettings):
@@ -252,8 +255,10 @@ def validate_jwt_secret(secret: str) -> None:
     Surrounding whitespace is ignored. The secret is rejected if it:
 
     - is shorter than JWT_SECRET_MIN_LENGTH characters (including empty),
-    - contains JWT_SECRET_PLACEHOLDER, in any letter case, or
-    - is one character repeated.
+    - contains JWT_SECRET_PLACEHOLDER, in any letter case,
+    - contains an example value from the documentation (JWT_SECRET_EXAMPLE_VALUES),
+      in any letter case, or
+    - has fewer than JWT_SECRET_MIN_DISTINCT_CHARACTERS different characters.
 
     Args:
         secret: The configured JWT_SECRET_KEY value
@@ -263,10 +268,12 @@ def validate_jwt_secret(secret: str) -> None:
             never includes the secret itself.
     """
     trimmed = secret.strip()
+    upper = trimmed.upper()
     if (
         len(trimmed) < JWT_SECRET_MIN_LENGTH
-        or JWT_SECRET_PLACEHOLDER in trimmed.upper()
-        or len(set(trimmed)) == 1
+        or JWT_SECRET_PLACEHOLDER in upper
+        or any(example.upper() in upper for example in JWT_SECRET_EXAMPLE_VALUES)
+        or len(set(trimmed)) < JWT_SECRET_MIN_DISTINCT_CHARACTERS
     ):
         raise ValueError(
             f"JWT_SECRET_KEY must be set to a random value of at least {JWT_SECRET_MIN_LENGTH} "

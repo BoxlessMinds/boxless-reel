@@ -1,6 +1,8 @@
 """Tests for the JWT secret check that runs when the API starts."""
 
 import os
+import re
+import secrets
 import subprocess
 import sys
 from pathlib import Path
@@ -9,13 +11,16 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.config import settings
+from src.config import settings, validate_jwt_secret
 from src.main import app
 
 # Obviously fake values used only by these tests
 VALID_SECRET = "test-only-not-a-real-secret-" + "0" * 36
 PLACEHOLDER = "CHANGE_ME_IN_PRODUCTION_USE_OPENSSL_RAND_HEX_32"
 RANDOM_HEX_VALUE = "0123456789abcdef" * 4
+DOCUMENTATION_EXAMPLE = "paste-your-64-character-value-here"
+TEN_DIFFERENT_CHARACTERS = "0123456789" * 4
+GENERATED_VALUE_COUNT = 1000
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -48,6 +53,14 @@ class TestJwtSecretValidation:
             "z" * 32,
             "z" * 64,
             "  " + "z" * 40 + "\t\n",
+            DOCUMENTATION_EXAMPLE,
+            DOCUMENTATION_EXAMPLE.upper(),
+            f"  {DOCUMENTATION_EXAMPLE}\t\n",
+            DOCUMENTATION_EXAMPLE + "-extra",
+            "prefix-" + DOCUMENTATION_EXAMPLE,
+            "ab" * 20,
+            "z" * 31 + "y",
+            "012345678" * 4,
         ],
         ids=[
             "empty",
@@ -65,6 +78,14 @@ class TestJwtSecretValidation:
             "one-character-32",
             "one-character-64",
             "one-character-padded",
+            "documentation-example",
+            "documentation-example-uppercase",
+            "documentation-example-padded",
+            "documentation-example-with-suffix",
+            "documentation-example-with-prefix",
+            "two-alternating-characters",
+            "one-character-plus-one-other",
+            "nine-different-characters",
         ],
     )
     def test_startup_refused_for_unusable_secret(
@@ -93,14 +114,37 @@ class TestJwtSecretValidation:
 
         assert secret not in str(exc_info.value)
 
-    @pytest.mark.parametrize("secret", [VALID_SECRET, RANDOM_HEX_VALUE])
+    @pytest.mark.parametrize(
+        "secret",
+        [VALID_SECRET, RANDOM_HEX_VALUE, TEN_DIFFERENT_CHARACTERS],
+        ids=["test-value", "hex-value", "ten-different-characters"],
+    )
     def test_startup_succeeds_for_valid_secret(
         self, monkeypatch: pytest.MonkeyPatch, secret: str
     ) -> None:
-        """A secret of 32 or more characters starts normally."""
+        """A secret of 32 or more characters with enough variety starts normally."""
         monkeypatch.setattr(settings, "jwt_secret_key", secret)
 
         start_app()
+
+    def test_generated_values_are_accepted(self) -> None:
+        """Values from the documented generation commands pass the check.
+
+        `openssl rand -hex 32` and `secrets.token_hex(32)` both produce 64
+        lower-case hex characters, so generating with `secrets.token_hex(32)`
+        covers both commands.
+        """
+        for _ in range(GENERATED_VALUE_COUNT):
+            validate_jwt_secret(secrets.token_hex(32))
+
+    def test_documentation_example_value_is_refused(self) -> None:
+        """The example JWT_SECRET_KEY value shown in the README is refused."""
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        match = re.search(r"^JWT_SECRET_KEY=(\S+)\s*$", readme, re.MULTILINE)
+        assert match is not None, "README.md has no line starting with JWT_SECRET_KEY="
+
+        with pytest.raises(ValueError):
+            validate_jwt_secret(match.group(1))
 
 
 def import_app_in_new_process(secret: str) -> subprocess.CompletedProcess[str]:
@@ -127,8 +171,8 @@ class TestJwtSecretCheckedOnImport:
 
     @pytest.mark.parametrize(
         "secret",
-        [PLACEHOLDER + "x", "z" * 32, "short-secret"],
-        ids=["placeholder-with-suffix", "one-character", "too-short"],
+        [PLACEHOLDER + "x", "z" * 32, "short-secret", DOCUMENTATION_EXAMPLE],
+        ids=["placeholder-with-suffix", "one-character", "too-short", "documentation-example"],
     )
     def test_import_refused_for_unusable_secret(self, secret: str) -> None:
         """Importing the app stops with the clear message and never shows the value."""
