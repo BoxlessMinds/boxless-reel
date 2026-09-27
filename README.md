@@ -251,7 +251,7 @@ All settings are environment variables, read from `.env` (manual setup) or `.env
 | `DEFAULT_LLM_PROVIDER` | No | Which AI provider to use by default: `anthropic` or `openai`. |
 | `ALLOWED_ORIGINS` | No | Web addresses allowed to call the API from a browser, as a list, for example `["https://reel.example.com"]`. The bundled web interface doesn't need it, in Docker or in manual setup. Set it only if you serve the web interface from a different address than the API. |
 | `FRONTEND_URL` | For Docker | The web interface's address. Used in invitation links and after connecting a YouTube account. The example file sets `http://localhost:8050` for Docker; use `http://localhost:8080` for manual setup. |
-| `REQUIRE_INVITATION_CODE` | No | `true` means people need an invitation to sign up; `false` means anyone who can reach the app can register. The example file sets `false`. An admin can change this later in the app. |
+| `REQUIRE_INVITATION_CODE` | No | `true` means people need an invitation to sign up; `false` means anyone who can reach the app can register. The example file sets `true`. An admin can change this later in the app. |
 | `SETTINGS_ENCRYPTION_KEY` | Recommended | Key used to encrypt API keys that users save in the app's Settings page. If you don't set it, a new one is made at every start, and saved keys stop working after a restart. Generate one with `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. |
 | `TAVILY_API_KEY` | No | Key from [Tavily](https://tavily.com/), to let chat search the web. |
 | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | For playlists | Credentials that let users connect their YouTube account. See below. |
