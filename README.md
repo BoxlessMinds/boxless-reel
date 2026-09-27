@@ -241,7 +241,7 @@ To stop either server, press `Ctrl+C` in its terminal.
 
 ## Configuration
 
-All settings are environment variables, read from `.env` (manual setup) or `.env.docker` (Docker). The table below covers the ones most people need. [`.env.example`](.env.example) lists many more, such as chunk sizes and Whisper options, each with a comment explaining it.
+All settings are environment variables, read from `.env` (manual setup) or `.env.docker` (Docker). The table below covers the ones most people need. [`.env.example`](.env.example) lists every setting, such as chunk sizes and Whisper options, each with a comment explaining it.
 
 | Setting | Required? | What it does |
 |---|---|---|
@@ -250,12 +250,12 @@ All settings are environment variables, read from `.env` (manual setup) or `.env
 | `OPENAI_API_KEY` | For AI chat | Your key from [OpenAI](https://platform.openai.com/api-keys), to chat using GPT. It's also used to index every saved transcript for search, and for the Whisper fallback, so set it even if you chat with Claude. Without it, the app currently freezes for several minutes each time you save a transcript. |
 | `DEFAULT_LLM_PROVIDER` | No | Which AI provider to use by default: `anthropic` or `openai`. |
 | `ALLOWED_ORIGINS` | No | Web addresses allowed to call the API from a browser, as a list, for example `["https://reel.example.com"]`. The bundled web interface doesn't need it, in Docker or in manual setup. Set it only if you serve the web interface from a different address than the API. |
-| `FRONTEND_URL` | For Docker | The web interface's address. Used in invitation links and after connecting a YouTube account. Defaults to `http://localhost:8080`. |
-| `REQUIRE_INVITATION_CODE` | No | `true` means people need an invitation to sign up; `false` means anyone who can reach the app can register. The example file sets `false`. An admin can change this later in the app. |
+| `FRONTEND_URL` | For Docker | The web interface's address. Used in invitation links and after connecting a YouTube account. The example file sets `http://localhost:8050` for Docker; use `http://localhost:8080` for manual setup. |
+| `REQUIRE_INVITATION_CODE` | No | `true` means people need an invitation to sign up; `false` means anyone who can reach the app can register. The example file sets `true`. An admin can change this later in the app. |
 | `SETTINGS_ENCRYPTION_KEY` | Recommended | Key used to encrypt API keys that users save in the app's Settings page. If you don't set it, a new one is made at every start, and saved keys stop working after a restart. Generate one with `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. |
 | `TAVILY_API_KEY` | No | Key from [Tavily](https://tavily.com/), to let chat search the web. |
 | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | For playlists | Credentials that let users connect their YouTube account. See below. |
-| `GOOGLE_OAUTH_REDIRECT_URI` | For playlists | Where Google sends users back after they connect. Defaults to `http://localhost:8001/api/youtube-auth/callback`; for Docker, use `http://localhost:5050/api/youtube-auth/callback`. |
+| `GOOGLE_OAUTH_REDIRECT_URI` | For playlists | Where Google sends users back after they connect. The example file sets `http://localhost:8050/api/youtube-auth/callback` for Docker; use `http://localhost:8001/api/youtube-auth/callback` for manual setup. |
 
 ### Setting up playlist management (optional)
 
