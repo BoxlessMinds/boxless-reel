@@ -143,7 +143,7 @@ These addresses only work from your own computer; the app isn't exposed to your 
 
 **If something goes wrong**, `docker compose logs api` shows the API's messages. The most common problems:
 
-- *The API keeps restarting and the log mentions `JWT_SECRET_KEY`*: the secret from step 3 is missing or shorter than 32 characters.
+- *The API keeps restarting and the log mentions `JWT_SECRET_KEY`*: the secret from step 3 is missing or isn't a random value. Generate a new one with the command in step 3, and paste it in place of the example text in `.env.docker`.
 - *Your library is empty after upgrading from an older version*: older versions kept the database in `transcripts.db` next to `docker-compose.yml`, and it now lives in the `data` folder. The [changelog](CHANGELOG.md) explains the one-time move.
 
 ## Manual setup
@@ -245,7 +245,7 @@ All settings are environment variables, read from `.env` (manual setup) or `.env
 
 | Setting | Required? | What it does |
 |---|---|---|
-| `JWT_SECRET_KEY` | **Yes** | Secret used to sign logins (JWT stands for JSON Web Token, the kind of login token the app uses). At least 32 characters. The API refuses to start without it. |
+| `JWT_SECRET_KEY` | **Yes** | Secret used to sign logins (JWT stands for JSON Web Token, the kind of login token the app uses). A random value of at least 32 characters; generate one with `openssl rand -hex 32`. The API refuses to start without it. |
 | `ANTHROPIC_API_KEY` | For AI chat | Your key from [Anthropic](https://console.anthropic.com/settings/keys), to chat using Claude. |
 | `OPENAI_API_KEY` | For AI chat | Your key from [OpenAI](https://platform.openai.com/api-keys), to chat using GPT. It's also used to index every saved transcript for search, and for the Whisper fallback, so set it even if you chat with Claude. Without it, the app currently freezes for several minutes each time you save a transcript. |
 | `DEFAULT_LLM_PROVIDER` | No | Which AI provider to use by default: `anthropic` or `openai`. |
