@@ -22,8 +22,11 @@ uv sync
 # Run development server
 uv run uvicorn src.main:app --reload --port 8001
 
-# Run tests
+# Run tests (skips the integration tests, which call paid APIs)
 uv run pytest
+
+# Run the integration tests on purpose (need API keys in .env)
+uv run pytest -m integration
 
 # Run tests with coverage
 uv run pytest --cov=src

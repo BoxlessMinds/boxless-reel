@@ -35,10 +35,10 @@ To install everything and run the tests:
 
 ```bash
 # Backend dependencies, including the test tools
-uv sync --extra dev
+uv sync
 
 # Run the test suite (skips tests that call paid APIs)
-uv run pytest -m "not integration"
+uv run pytest
 
 # Web UI
 cd youtube-transcript-ui
@@ -49,7 +49,7 @@ npm run build
 
 See the README for how to configure and run the app locally.
 
-The unit tests mock YouTube and the LLM providers, so you don't need API keys to run them. Tests marked `integration` call real, paid APIs; only run them on purpose, with your own keys.
+The unit tests mock YouTube and the LLM providers, so you don't need API keys to run them. Tests marked `integration` call real, paid APIs, so `uv run pytest` skips them. To run them on purpose, put your own API keys in `.env` and run `uv run pytest -m integration`. They cost money each time they run.
 
 ## Code conventions
 
