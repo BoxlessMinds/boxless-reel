@@ -5,6 +5,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # passlib 1.7.4 is not compatible with bcrypt >= 4.1. On bcrypt 5.0.0 every
+      # hash and verify call raises "ValueError: password cannot be longer than
+      # 72 bytes", so registration and login fail with a 500 error.
+      # Keep bcrypt pinned in pyproject.toml until passlib is replaced.
+      - dependency-name: "bcrypt"
 
   - package-ecosystem: npm
     directory: /youtube-transcript-ui
