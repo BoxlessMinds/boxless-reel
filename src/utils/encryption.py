@@ -1,7 +1,6 @@
 """Encryption utilities for securing sensitive settings."""
 
 import logging
-import os
 
 from cryptography.fernet import Fernet, InvalidToken
 

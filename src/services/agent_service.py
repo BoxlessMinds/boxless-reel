@@ -18,9 +18,13 @@ from src.agents import (
 )
 from src.agents.knowledge import (
     DocumentKnowledgeBase,
-    IndexingError as KBIndexingError,
     TranscriptKnowledgeBase,
 )
+from src.agents.knowledge import (
+    IndexingError as KBIndexingError,
+)
+from src.models.session import Message as MessageModel
+from src.models.session import Session as SessionModel
 from src.repositories import SessionRepository, TranscriptRepository
 from src.services.document_service import DocumentService
 from src.services.exceptions import (
@@ -30,7 +34,6 @@ from src.services.exceptions import (
     SessionNotFoundError,
     TranscriptNotFoundError,
 )
-from src.models.session import Session as SessionModel, Message as MessageModel
 from src.utils.artifact_parser import parse_artifacts
 
 logger = logging.getLogger(__name__)

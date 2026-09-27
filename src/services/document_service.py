@@ -1,7 +1,6 @@
 """Document service for managing uploaded documents in chat sessions."""
 
 import logging
-import os
 import uuid
 from pathlib import Path
 
@@ -11,7 +10,6 @@ from src.agents.knowledge import DocumentKnowledgeBase
 from src.agents.knowledge.exceptions import IndexingError as KBIndexingError
 from src.config import settings
 from src.models.document import Document
-from src.config import settings
 from src.repositories.document_repository import DocumentRepository
 from src.utils.artifact_parser import (
     ParsedArtifact,
@@ -20,10 +18,14 @@ from src.utils.artifact_parser import (
 )
 from src.utils.file_processing import (
     FILE_SIZE_LIMITS,
-    ExtractionError,
     ExtractedContent,
+    ExtractionError,
     FileProcessor,
+)
+from src.utils.file_processing import (
     FileTooLargeError as ProcessingFileTooLargeError,
+)
+from src.utils.file_processing import (
     UnsupportedFileTypeError as ProcessingUnsupportedFileTypeError,
 )
 

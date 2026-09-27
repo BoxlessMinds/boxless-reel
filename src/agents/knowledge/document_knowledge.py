@@ -9,7 +9,7 @@ from lancedb.embeddings import get_registry
 from lancedb.pydantic import LanceModel, Vector
 
 from src.agents.config import AgentConfig, get_agent_config
-from src.agents.knowledge.document_chunker import DocumentChunk, DocumentChunker
+from src.agents.knowledge.document_chunker import DocumentChunker
 from src.agents.knowledge.exceptions import IndexingError, SearchError
 from src.utils.file_processing import ExtractedContent
 

@@ -12,7 +12,6 @@ from src.services.exceptions import (
     CrossChatValidationError,
 )
 
-
 # --- Fixtures ---
 
 

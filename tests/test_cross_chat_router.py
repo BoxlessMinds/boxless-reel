@@ -5,16 +5,13 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
 
 from src.main import app
-from src.models.transcript import Transcript
 from src.services.exceptions import (
     CrossChatSessionNotFoundError,
     CrossChatValidationError,
     QueryExecutionError,
 )
-
 
 # --- Fixtures ---
 

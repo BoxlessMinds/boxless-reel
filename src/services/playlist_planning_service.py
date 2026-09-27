@@ -30,12 +30,12 @@ from src.models.playlist import Playlist, PlaylistItem
 from src.repositories.plan_repository import PlanRepository
 from src.repositories.playlist_repository import PlaylistRepository
 from src.repositories.watch_history_repository import WatchHistoryRepository
+from src.services.exceptions import InvalidVideoIdError
 from src.services.google_auth_service import (
     GOOGLE_TOKEN_URI,
     GoogleAuthService,
     get_google_auth_service,
 )
-from src.services.exceptions import InvalidVideoIdError
 from src.services.playlist_sync_service import PlaylistSyncService
 from src.services.quota_service import QuotaService, get_quota_service
 from src.services.youtube_data_service import YouTubeDataService

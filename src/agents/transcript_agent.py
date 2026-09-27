@@ -24,7 +24,6 @@ from src.agents.knowledge import (
 )
 from src.agents.prompts import (
     AGENT_INSTRUCTIONS,
-    format_search_results,
     format_system_prompt,
 )
 

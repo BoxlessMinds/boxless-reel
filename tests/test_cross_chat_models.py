@@ -3,10 +3,6 @@
 from datetime import datetime
 from uuid import uuid4
 
-import pytest
-from sqlalchemy.orm import Session as DBSession
-
-from src.database import Base
 from src.models.cross_chat_session import (
     CrossChatMessage,
     CrossChatSession,
@@ -14,7 +10,6 @@ from src.models.cross_chat_session import (
 )
 from src.models.session import Session as ChatSession
 from src.models.transcript import Transcript
-from src.models.user import User
 
 
 def _make_transcript(db, user_id, video_id):

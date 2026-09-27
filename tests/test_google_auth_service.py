@@ -13,12 +13,12 @@ from jose import jwt
 
 from src.config import settings
 from src.services.google_auth_service import (
+    STATE_TOKEN_TYPE,
     GoogleAuthService,
     GoogleAuthServiceError,
     GoogleAuthStateError,
     GoogleCredentialNotFoundError,
     GoogleTokenRefreshError,
-    STATE_TOKEN_TYPE,
     _utc_now_naive,
 )
 

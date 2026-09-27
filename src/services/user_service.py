@@ -1,12 +1,9 @@
 """User management service."""
 
 import logging
-from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from src.config import settings
-from src.models.invitation import Invitation
 from src.models.user import User
 from src.repositories.invitation_repository import InvitationRepository
 from src.repositories.user_repository import UserRepository

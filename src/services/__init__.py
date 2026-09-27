@@ -25,14 +25,6 @@ from src.services.document_service import (
     MaxDocumentsExceededError,
     UnsupportedFileTypeError,
 )
-from src.services.google_auth_service import (
-    GoogleAuthService,
-    GoogleAuthServiceError,
-    GoogleAuthStateError,
-    GoogleCredentialNotFoundError,
-    GoogleTokenRefreshError,
-    get_google_auth_service,
-)
 from src.services.exceptions import (
     AgentNotAvailableError,
     AgentServiceError,
@@ -47,6 +39,14 @@ from src.services.exceptions import (
     TranscriptNotFoundError,
     VideoNotFoundError,
     YouTubeServiceError,
+)
+from src.services.google_auth_service import (
+    GoogleAuthService,
+    GoogleAuthServiceError,
+    GoogleAuthStateError,
+    GoogleCredentialNotFoundError,
+    GoogleTokenRefreshError,
+    get_google_auth_service,
 )
 from src.services.invitation_service import (
     InvitationExistsError,
@@ -75,21 +75,24 @@ from src.services.quota_service import (
     get_daily_quota_status,
     get_quota_service,
 )
-from src.services.watch_history_service import (
-    InvalidTakeoutFileError,
-    TakeoutFileTooLargeError,
-    WatchHistoryService,
-    WatchHistoryServiceError,
-    get_watch_history_service,
-)
 from src.services.settings_service import SettingsService, get_settings_service
-from src.services.system_settings_service import SystemSettingsService, get_system_settings_service
+from src.services.system_settings_service import (
+    SystemSettingsService,
+    get_system_settings_service,
+)
 from src.services.transcript_service import TranscriptService
 from src.services.user_service import (
     InvalidInvitationError,
     UserExistsError,
     UserService,
     get_user_service,
+)
+from src.services.watch_history_service import (
+    InvalidTakeoutFileError,
+    TakeoutFileTooLargeError,
+    WatchHistoryService,
+    WatchHistoryServiceError,
+    get_watch_history_service,
 )
 from src.services.youtube_data_service import (
     PermanentAPIError,

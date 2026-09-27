@@ -6,13 +6,12 @@ the watch-history tables, matching the pattern established in
 `test_dedupe_purge_planning.py`.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from src.models.plan import Plan
 from src.models.playlist import Playlist, PlaylistItem
 from src.models.user import User
 from src.models.watch_history import WatchHistoryEntry, WatchHistoryImport

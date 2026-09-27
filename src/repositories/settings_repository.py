@@ -1,7 +1,6 @@
 """Repository for settings database operations."""
 
 import logging
-from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session

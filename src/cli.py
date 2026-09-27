@@ -6,10 +6,10 @@ import sys
 
 from sqlalchemy.orm import Session
 
-from src.database import SessionLocal, engine, Base
-from src.services.user_service import UserExistsError, UserService
-from src.repositories.user_repository import UserRepository
+from src.database import Base, SessionLocal, engine
 from src.repositories.invitation_repository import InvitationRepository
+from src.repositories.user_repository import UserRepository
+from src.services.user_service import UserExistsError, UserService
 
 
 def get_db() -> Session:
@@ -51,7 +51,7 @@ def create_admin(email: str, password: str | None = None, display_name: str | No
             display_name=display_name,
         )
 
-        print(f"Admin user created successfully!")
+        print("Admin user created successfully!")
         print(f"  ID: {user.id}")
         print(f"  Email: {user.email}")
         print(f"  Display Name: {user.display_name}")
