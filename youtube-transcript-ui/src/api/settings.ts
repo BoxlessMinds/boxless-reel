@@ -4,6 +4,7 @@
 
 import { apiClient } from './client';
 import type {
+  LLMProvider,
   LLMSettings,
   LLMSettingsUpdate,
   ValidateKeyResponse,
@@ -27,7 +28,7 @@ export const settingsApi = {
   /**
    * Validate an API key before saving.
    */
-  validateKey: (provider: 'anthropic' | 'openai', apiKey: string) =>
+  validateKey: (provider: LLMProvider, apiKey: string) =>
     apiClient<ValidateKeyResponse>('/api/settings/validate-key', {
       method: 'POST',
       body: JSON.stringify({ provider, api_key: apiKey }),

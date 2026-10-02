@@ -84,9 +84,13 @@ class Settings(BaseSettings):
         default=None,
         description="Anthropic API key for Claude models",
     )
+    openrouter_api_key: str | None = Field(
+        default=None,
+        description="OpenRouter API key for any model OpenRouter hosts, and for embeddings when no OpenAI key is set",
+    )
 
     # Agent Configuration - Model Selection
-    default_llm_provider: Literal["anthropic", "openai"] = Field(
+    default_llm_provider: Literal["anthropic", "openai", "openrouter"] = Field(
         default="anthropic",
         description="Default LLM provider for agent queries",
     )
@@ -233,7 +237,7 @@ class Settings(BaseSettings):
     @property
     def agents_enabled(self) -> bool:
         """Check if at least one LLM provider is configured."""
-        return bool(self.openai_api_key or self.anthropic_api_key)
+        return bool(self.openai_api_key or self.anthropic_api_key or self.openrouter_api_key)
 
     @property
     def youtube_enabled(self) -> bool:
@@ -245,6 +249,8 @@ class Settings(BaseSettings):
         """Check if the default provider has an API key configured."""
         if self.default_llm_provider == "anthropic":
             return bool(self.anthropic_api_key)
+        if self.default_llm_provider == "openrouter":
+            return bool(self.openrouter_api_key)
         return bool(self.openai_api_key)
 
 

@@ -199,7 +199,7 @@ class TranscriptQueryAgent:
         if not self.config.is_enabled:
             raise AgentNotConfiguredError(
                 "Agent features require at least one LLM API key. "
-                "Set ANTHROPIC_API_KEY or OPENAI_API_KEY."
+                "Set ANTHROPIC_API_KEY, OPENAI_API_KEY or OPENROUTER_API_KEY."
             )
 
         self.transcript_id = transcript_id

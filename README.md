@@ -90,18 +90,22 @@ You should see a line of 64 letters and numbers. If `openssl` isn't installed (c
 # Paste the value from step 3
 JWT_SECRET_KEY=paste-your-64-character-value-here
 
-# Recommended: OpenAI is used to index transcripts for search, and either key enables AI chat
+# Recommended: any one of these enables AI chat. OpenAI or OpenRouter is
+# also needed to index transcripts for search.
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
+OPENROUTER_API_KEY=
 ```
 
-All three lines already exist in the file; fill them in where they are, and don't add new ones. Only `JWT_SECRET_KEY` is required. The other settings already have values that work for Docker, including `FRONTEND_URL=http://localhost:8050`, so leave them as they are. You don't need to set `ALLOWED_ORIGINS`: the web interface reaches the API through its own address, so the browser never makes a cross-site request. Keep this file private: it holds your secrets, and Git is already set up to ignore it.
+All four lines already exist in the file; fill them in where they are, and don't add new ones. With only an OpenRouter key, also set `DEFAULT_LLM_PROVIDER=openrouter` and an OpenRouter model ID such as `DEFAULT_MODEL=anthropic/claude-sonnet-4.5`. Only `JWT_SECRET_KEY` is required. The other settings already have values that work for Docker, including `FRONTEND_URL=http://localhost:8050`, so leave them as they are. You don't need to set `ALLOWED_ORIGINS`: the web interface reaches the API through its own address, so the browser never makes a cross-site request. Keep this file private: it holds your secrets, and Git is already set up to ignore it.
 
 **5. Build and start the app.**
 
 ```bash
 docker compose up -d --build
 ```
+
+Using [Podman](https://podman.io/) instead of Docker? Run `podman compose up -d --build`, and use `podman compose` in place of `docker compose` in every command below.
 
 The first build downloads and installs everything, so it takes several minutes. It finishes with lines like these:
 
@@ -189,7 +193,7 @@ cp .env.example .env
 uv run python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Open `.env`, and paste the 64-character value after `JWT_SECRET_KEY=`. Add your `OPENAI_API_KEY` too (see [Configuration](#configuration) for why), and `ANTHROPIC_API_KEY` if you want to chat using Claude. You don't need to change anything else to get started.
+Open `.env`, and paste the 64-character value after `JWT_SECRET_KEY=`. Add your `OPENAI_API_KEY` or `OPENROUTER_API_KEY` too (see [Configuration](#configuration) for why), and `ANTHROPIC_API_KEY` if you want to chat using Claude directly. You don't need to change anything else to get started.
 
 **5. Start the API** on port 8001, which is the port the web interface expects:
 
@@ -244,8 +248,10 @@ All settings are environment variables, read from `.env` (manual setup) or `.env
 |---|---|---|
 | `JWT_SECRET_KEY` | **Yes** | Secret used to sign logins (JWT stands for JSON Web Token, the kind of login token the app uses). A random value of at least 32 characters; generate one with `openssl rand -hex 32`. The API refuses to start without it. |
 | `ANTHROPIC_API_KEY` | For AI chat | Your key from [Anthropic](https://console.anthropic.com/settings/keys), to chat using Claude. |
-| `OPENAI_API_KEY` | For AI chat | Your key from [OpenAI](https://platform.openai.com/api-keys), to chat using GPT. It's also used to index every saved transcript for search, and for the Whisper fallback, so set it even if you chat with Claude. Without it, the app currently freezes for several minutes each time you save a transcript. |
-| `DEFAULT_LLM_PROVIDER` | No | Which AI provider to use by default: `anthropic` or `openai`. |
+| `OPENAI_API_KEY` | For AI chat | Your key from [OpenAI](https://platform.openai.com/api-keys), to chat using GPT. It's also used to index every saved transcript for search, and it's the only key the Whisper fallback can use. Without it or an OpenRouter key, the app currently freezes for several minutes each time you save a transcript. |
+| `OPENROUTER_API_KEY` | For AI chat | Your key from [OpenRouter](https://openrouter.ai/settings/keys), to chat with any model it offers (Claude, GPT, Gemini and more). Without an OpenAI key, search indexing goes through OpenRouter too, so this one key covers everything except Whisper. |
+| `DEFAULT_LLM_PROVIDER` | No | Which AI provider to use by default: `anthropic`, `openai` or `openrouter`. |
+| `DEFAULT_MODEL` | No | Model for the default provider. OpenRouter IDs have a provider prefix, for example `anthropic/claude-sonnet-4.5`; see [openrouter.ai/models](https://openrouter.ai/models). |
 | `ALLOWED_ORIGINS` | No | Web addresses allowed to call the API from a browser, as a list, for example `["https://reel.example.com"]`. The bundled web interface doesn't need it, in Docker or in manual setup. Set it only if you serve the web interface from a different address than the API. |
 | `FRONTEND_URL` | For Docker | The web interface's address. Used in invitation links and after connecting a YouTube account. The example file sets `http://localhost:8050` for Docker; use `http://localhost:8080` for manual setup. |
 | `REQUIRE_INVITATION_CODE` | No | `true` means people need an invitation to sign up; `false` means anyone who can reach the app can register. The example file sets `true`. An admin can change this later in the app. |

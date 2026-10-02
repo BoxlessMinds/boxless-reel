@@ -19,7 +19,13 @@ import { useUploadDocument } from "@/hooks/useDocuments";
 import { useSettingsContext } from "@/contexts/SettingsContext";
 import { formatDuration, formatDate } from "@/utils/formatters";
 import { ApiError } from "@/api/client";
-import type { Citation } from "@/api/types";
+import type { Citation, LLMProvider } from "@/api/types";
+
+const MODEL_LABELS: Record<LLMProvider, string> = {
+  anthropic: "Claude",
+  openai: "GPT-4",
+  openrouter: "OpenRouter",
+};
 
 interface Message {
   role: "user" | "assistant";
@@ -38,7 +44,7 @@ export default function TranscriptDetailPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
-  const [modelProvider, setModelProvider] = useState<"anthropic" | "openai">("anthropic");
+  const [modelProvider, setModelProvider] = useState<LLMProvider>("anthropic");
 
   const { settings } = useSettingsContext();
   const { data: transcript, isLoading, error } = useTranscript(id!);
@@ -61,7 +67,7 @@ export default function TranscriptDetailPage() {
   useEffect(() => {
     if (existingSession && !sessionId) {
       setSessionId(existingSession.session_id);
-      setModelProvider(existingSession.model_provider as "anthropic" | "openai");
+      setModelProvider(existingSession.model_provider as LLMProvider);
       // Convert loaded messages to local format
       const loadedMessages: Message[] = existingSession.messages.map(msg => ({
         role: msg.role as "user" | "assistant",
@@ -354,7 +360,7 @@ export default function TranscriptDetailPage() {
                   </div>
                   <Select
                     value={modelProvider}
-                    onValueChange={(value: "anthropic" | "openai") => setModelProvider(value)}
+                    onValueChange={(value: LLMProvider) => setModelProvider(value)}
                     disabled={sessionId !== null}
                   >
                     <SelectTrigger className="w-[160px] h-8">
@@ -366,6 +372,9 @@ export default function TranscriptDetailPage() {
                       )}
                       {settings?.available_providers.includes("openai") && (
                         <SelectItem value="openai">OpenAI</SelectItem>
+                      )}
+                      {settings?.available_providers.includes("openrouter") && (
+                        <SelectItem value="openrouter">OpenRouter</SelectItem>
                       )}
                     </SelectContent>
                   </Select>
@@ -384,7 +393,7 @@ export default function TranscriptDetailPage() {
                           Ask a question about this transcript
                         </p>
                         <p className="text-xs text-muted-foreground/60 mt-1">
-                          Model: {modelProvider === "anthropic" ? "Claude" : "GPT-4"}
+                          Model: {MODEL_LABELS[modelProvider] ?? modelProvider}
                         </p>
                       </div>
                     </div>

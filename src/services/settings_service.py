@@ -5,17 +5,24 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from src.agents.config import get_agent_config
+from src.agents.config import OPENROUTER_BASE_URL, PROVIDER_ORDER, get_agent_config
 from src.config import settings as app_settings
 from src.repositories.settings_repository import SettingsRepository
 
 logger = logging.getLogger(__name__)
 
 
-# Available models by provider
+# Available models by provider. OpenRouter accepts any model it lists at
+# https://openrouter.ai/models; these are suggestions.
 AVAILABLE_MODELS: dict[str, list[str]] = {
     "anthropic": ["claude-sonnet-4-5", "claude-opus-4-5"],
     "openai": ["gpt-4o", "gpt-4o-mini"],
+    "openrouter": [
+        "anthropic/claude-sonnet-4.5",
+        "anthropic/claude-opus-4.5",
+        "openai/gpt-4o",
+        "google/gemini-2.5-pro",
+    ],
 }
 
 
@@ -48,6 +55,7 @@ class SettingsService:
     SETTINGS_FIELD_MAP: dict[str, str] = {
         "llm.anthropic_api_key": "anthropic_api_key",
         "llm.openai_api_key": "openai_api_key",
+        "llm.openrouter_api_key": "openrouter_api_key",
         "llm.default_provider": "default_llm_provider",
         "llm.default_model": "default_model",
         "embedding.model": "embedding_model",
@@ -63,6 +71,7 @@ class SettingsService:
     CATEGORY_MAP: dict[str, str] = {
         "llm.anthropic_api_key": "llm",
         "llm.openai_api_key": "llm",
+        "llm.openrouter_api_key": "llm",
         "llm.default_provider": "llm",
         "llm.default_model": "llm",
         "embedding.model": "embedding",
@@ -159,7 +168,7 @@ class SettingsService:
         Check if an API key is configured for a provider.
 
         Args:
-            provider: Provider name ("anthropic", "openai", or "tavily").
+            provider: Provider name ("anthropic", "openai", "openrouter", or "tavily").
             user_id: UUID of the user to check for.
 
         Returns:
@@ -184,7 +193,7 @@ class SettingsService:
             List of provider names that have API keys configured.
         """
         providers = []
-        for provider in ["anthropic", "openai"]:
+        for provider in PROVIDER_ORDER:
             if self.is_api_key_configured(provider, user_id):
                 providers.append(provider)
         return providers
@@ -222,6 +231,7 @@ class SettingsService:
             key_mapping = {
                 "anthropic_api_key": "llm.anthropic_api_key",
                 "openai_api_key": "llm.openai_api_key",
+                "openrouter_api_key": "llm.openrouter_api_key",
                 "default_provider": "llm.default_provider",
                 "default_model": "llm.default_model",
                 "embedding_model": "embedding.model",
@@ -255,7 +265,7 @@ class SettingsService:
         Validate an API key by making a minimal API call.
 
         Args:
-            provider: Provider name ("anthropic", "openai", or "tavily").
+            provider: Provider name ("anthropic", "openai", "openrouter", or "tavily").
             api_key: The API key to validate.
 
         Returns:
@@ -269,6 +279,8 @@ class SettingsService:
                 return self._validate_anthropic_key(api_key)
             elif provider == "openai":
                 return self._validate_openai_key(api_key)
+            elif provider == "openrouter":
+                return self._validate_openrouter_key(api_key)
             elif provider == "tavily":
                 return self._validate_tavily_key(api_key)
             else:
@@ -317,6 +329,21 @@ class SettingsService:
         except Exception as e:
             return False, f"Validation failed: {str(e)}"
 
+    def _validate_openrouter_key(self, api_key: str) -> tuple[bool, str | None]:
+        """Validate an OpenRouter API key (the key-info endpoint costs nothing)."""
+        try:
+            import openai
+
+            client = openai.OpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL)
+            client.get("/key", cast_to=object)
+            return True, None
+        except openai.AuthenticationError:
+            return False, "Invalid API key"
+        except openai.APIConnectionError:
+            return False, "Could not connect to OpenRouter API"
+        except Exception as e:
+            return False, f"Validation failed: {str(e)}"
+
     def _validate_tavily_key(self, api_key: str) -> tuple[bool, str | None]:
         """Validate a Tavily API key."""
         try:
@@ -354,6 +381,7 @@ class SettingsService:
         return {
             "anthropic_api_key_configured": self.is_api_key_configured("anthropic", user_id),
             "openai_api_key_configured": self.is_api_key_configured("openai", user_id),
+            "openrouter_api_key_configured": self.is_api_key_configured("openrouter", user_id),
             "default_provider": values.get("llm.default_provider", "anthropic"),
             "default_model": values.get("llm.default_model", "claude-sonnet-4-5"),
             "available_providers": self.get_available_providers(user_id),

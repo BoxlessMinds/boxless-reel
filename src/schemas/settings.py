@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class ProviderModels(BaseModel):
     """Available models for a provider."""
 
-    provider: Literal["anthropic", "openai"]
+    provider: Literal["anthropic", "openai", "openrouter"]
     models: list[str]
 
 
@@ -22,9 +22,13 @@ class LLMSettingsResponse(BaseModel):
     openai_api_key_configured: bool = Field(
         description="Whether OpenAI API key is configured"
     )
+    openrouter_api_key_configured: bool = Field(
+        default=False,
+        description="Whether OpenRouter API key is configured"
+    )
 
     # LLM Configuration
-    default_provider: Literal["anthropic", "openai"] = Field(
+    default_provider: Literal["anthropic", "openai", "openrouter"] = Field(
         description="Default LLM provider for agent queries"
     )
     default_model: str = Field(
@@ -39,7 +43,7 @@ class LLMSettingsResponse(BaseModel):
 
     # Embedding Configuration
     embedding_model: str = Field(
-        description="OpenAI embedding model for vector search"
+        description="OpenAI embedding model for vector search (reached through OpenRouter when no OpenAI key is set)"
     )
 
     # Agent Behavior
@@ -87,7 +91,11 @@ class LLMSettingsUpdate(BaseModel):
         default=None,
         description="OpenAI API key. None = don't update, empty = clear"
     )
-    default_provider: Literal["anthropic", "openai"] | None = Field(
+    openrouter_api_key: str | None = Field(
+        default=None,
+        description="OpenRouter API key. None = don't update, empty = clear"
+    )
+    default_provider: Literal["anthropic", "openai", "openrouter"] | None = Field(
         default=None,
         description="Default LLM provider"
     )
@@ -134,8 +142,8 @@ class LLMSettingsUpdate(BaseModel):
 class ValidateKeyRequest(BaseModel):
     """Request schema for POST /api/settings/validate-key."""
 
-    provider: Literal["anthropic", "openai", "tavily"] = Field(
-        description="Provider to validate key for (anthropic, openai, or tavily)"
+    provider: Literal["anthropic", "openai", "openrouter", "tavily"] = Field(
+        description="Provider to validate key for (anthropic, openai, openrouter, or tavily)"
     )
     api_key: str = Field(
         min_length=1,
