@@ -21,6 +21,7 @@ class SettingsRepository:
     SENSITIVE_KEYS: set[str] = {
         "llm.anthropic_api_key",
         "llm.openai_api_key",
+        "llm.openrouter_api_key",
     }
 
     # Mask to use for displaying sensitive values

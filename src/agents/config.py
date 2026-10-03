@@ -8,6 +8,21 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Order providers are tried in when the requested one has no API key
+PROVIDER_ORDER = ("anthropic", "openai", "openrouter")
+
+# Model used when falling back to a provider that isn't the default one
+FALLBACK_MODELS: dict[str, str] = {
+    "anthropic": "claude-sonnet-4-5",
+    "openai": "gpt-4o",
+    "openrouter": "anthropic/claude-sonnet-4.5",
+}
+
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+# Agno's OpenRouter model stops answers at 1024 tokens unless told otherwise
+OPENROUTER_MAX_TOKENS = 8192
+
 
 class AgentConfigurationError(Exception):
     """Raised when agent configuration is invalid or incomplete."""
@@ -46,20 +61,46 @@ class AgentConfig:
     web_search_enabled: bool = True
     web_search_max_results: int = 5
 
+    # OpenRouter (any model it hosts; also embeddings when no OpenAI key is set)
+    openrouter_api_key: str | None = None
+
     @property
     def is_enabled(self) -> bool:
         """Check if agent features are enabled (at least one API key set)."""
-        return bool(self.openai_api_key or self.anthropic_api_key)
+        return bool(self.available_providers)
+
+    def _api_key_for(self, provider: str) -> str | None:
+        """Return the API key configured for a provider, if any."""
+        return {
+            "anthropic": self.anthropic_api_key,
+            "openai": self.openai_api_key,
+            "openrouter": self.openrouter_api_key,
+        }.get(provider)
 
     @property
     def available_providers(self) -> list[str]:
         """List of providers with configured API keys."""
-        providers = []
-        if self.anthropic_api_key:
-            providers.append("anthropic")
-        if self.openai_api_key:
-            providers.append("openai")
-        return providers
+        return [p for p in PROVIDER_ORDER if self._api_key_for(p)]
+
+    @property
+    def embedding_connection(self) -> tuple[str, str | None, str | None]:
+        """
+        Work out how to reach the embedding model.
+
+        OpenAI is used directly when its key is set. Otherwise OpenRouter is
+        used with the same model under its "openai/" name, so the vectors match
+        either way.
+
+        Returns:
+            Tuple of (model name, API key, base URL). The base URL is None for
+            OpenAI itself.
+        """
+        if self.openai_api_key or not self.openrouter_api_key:
+            return self.embedding_model, self.openai_api_key, None
+        model = self.embedding_model
+        if "/" not in model:
+            model = f"openai/{model}"
+        return model, self.openrouter_api_key, OPENROUTER_BASE_URL
 
     @property
     def is_web_search_available(self) -> bool:
@@ -81,27 +122,23 @@ class AgentConfig:
         """
         target_provider = provider or self.default_llm_provider
 
-        if target_provider == "anthropic" and not self.anthropic_api_key:
-            if self.openai_api_key:
-                logger.warning(
-                    "Anthropic requested but not configured, falling back to OpenAI"
-                )
-                return "openai"
+        if self._api_key_for(target_provider):
+            return target_provider
+
+        available = self.available_providers
+        if not available:
             raise AgentConfigurationError(
-                "No LLM provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY."
+                "No LLM provider configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY "
+                "or OPENROUTER_API_KEY."
             )
 
-        if target_provider == "openai" and not self.openai_api_key:
-            if self.anthropic_api_key:
-                logger.warning(
-                    "OpenAI requested but not configured, falling back to Anthropic"
-                )
-                return "anthropic"
-            raise AgentConfigurationError(
-                "No LLM provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY."
-            )
-
-        return target_provider
+        fallback = available[0]
+        logger.warning(
+            "%s requested but not configured, falling back to %s",
+            target_provider,
+            fallback,
+        )
+        return fallback
 
     def get_model_id(self, provider: str | None = None) -> str:
         """
@@ -120,9 +157,7 @@ class AgentConfig:
             return self.default_model
 
         # Otherwise return sensible defaults for fallback providers
-        if validated_provider == "anthropic":
-            return "claude-sonnet-4-5"
-        return "gpt-4o"
+        return FALLBACK_MODELS[validated_provider]
 
     def create_model(self, provider: str | None = None):
         """
@@ -132,7 +167,7 @@ class AgentConfig:
             provider: Target provider or None for default.
 
         Returns:
-            Configured Agno model (Claude or OpenAIChat).
+            Configured Agno model (Claude, OpenAIChat or OpenRouter).
 
         Raises:
             AgentConfigurationError: If provider is not available.
@@ -150,6 +185,21 @@ class AgentConfig:
                 raise AgentConfigurationError(
                     "Anthropic provider requires 'anthropic' package. "
                     "Install with: uv add anthropic"
+                ) from e
+
+        if validated_provider == "openrouter":
+            try:
+                from agno.models.openrouter import OpenRouter
+
+                return OpenRouter(
+                    id=model_id,
+                    api_key=self.openrouter_api_key,
+                    max_tokens=OPENROUTER_MAX_TOKENS,
+                )
+            except ImportError as e:
+                raise AgentConfigurationError(
+                    "OpenRouter provider requires 'openai' package. "
+                    "Install with: uv add openai"
                 ) from e
 
         # OpenAI
@@ -189,6 +239,7 @@ def get_agent_config() -> AgentConfig:
         tavily_api_key=settings.tavily_api_key,
         web_search_enabled=settings.web_search_enabled,
         web_search_max_results=settings.web_search_max_results,
+        openrouter_api_key=settings.openrouter_api_key,
     )
 
 
@@ -216,4 +267,5 @@ def get_agent_config_for_user(user_settings: dict) -> AgentConfig:
         tavily_api_key=user_settings.get("tavily_api_key") or base.tavily_api_key,
         web_search_enabled=user_settings.get("web_search_enabled", base.web_search_enabled),
         web_search_max_results=base.web_search_max_results,
+        openrouter_api_key=user_settings.get("openrouter_api_key") or base.openrouter_api_key,
     )

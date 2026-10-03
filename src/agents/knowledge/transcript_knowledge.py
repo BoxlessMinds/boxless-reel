@@ -4,11 +4,11 @@ import logging
 from typing import Any
 
 import lancedb
-from lancedb.embeddings import get_registry
 from lancedb.pydantic import LanceModel, Vector
 
 from src.agents.config import AgentConfig, get_agent_config
 from src.agents.knowledge.chunker import TranscriptChunker
+from src.agents.knowledge.embeddings import create_embedding_function
 from src.agents.knowledge.exceptions import IndexingError, SearchError
 
 logger = logging.getLogger(__name__)
@@ -88,28 +88,6 @@ class ChunkResult:
             f"ChunkResult(transcript_id={self.transcript_id!r}, "
             f"timestamp={self.format_timestamp()!r}, score={self.score:.4f})"
         )
-
-
-def _create_embedding_function(model_name: str, api_key: str | None = None):
-    """
-    Create an OpenAI embedding function for LanceDB.
-
-    Args:
-        model_name: The embedding model name (e.g., 'text-embedding-3-small').
-        api_key: OpenAI API key. If None, uses OPENAI_API_KEY env var.
-
-    Returns:
-        LanceDB embedding function instance.
-    """
-    import os
-
-    # LanceDB reads API key from environment variable
-    # Set it before creating the embedding function
-    if api_key and not os.environ.get("OPENAI_API_KEY"):
-        os.environ["OPENAI_API_KEY"] = api_key
-
-    registry = get_registry()
-    return registry.get("openai").create(name=model_name)
 
 
 def _create_chunk_model(embedding_func):
@@ -197,13 +175,10 @@ class TranscriptKnowledgeBase:
         Get or create the embedding function.
 
         Returns:
-            LanceDB OpenAI embedding function.
+            LanceDB embedding function (OpenAI directly, or through OpenRouter).
         """
         if self._embedding_func is None:
-            self._embedding_func = _create_embedding_function(
-                self.config.embedding_model,
-                self.config.openai_api_key,
-            )
+            self._embedding_func = create_embedding_function(self.config)
         return self._embedding_func
 
     @property
@@ -227,6 +202,9 @@ class TranscriptKnowledgeBase:
             LanceDB table for transcript chunks.
         """
         if self._table is None:
+            # Creating the embedding function first supplies the API key that a
+            # saved table's embedding settings refer to
+            self.embedding_func
             table_names = self.db.list_tables().tables
             if self.TABLE_NAME in table_names:
                 self._table = self.db.open_table(self.TABLE_NAME)

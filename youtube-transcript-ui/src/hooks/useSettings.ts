@@ -4,7 +4,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { settingsApi } from '@/api/settings';
-import type { LLMSettingsUpdate } from '@/api/types';
+import type { LLMProvider, LLMSettingsUpdate } from '@/api/types';
 
 // Query key factory for type-safe cache invalidation
 export const settingsKeys = {
@@ -48,7 +48,7 @@ export function useValidateApiKey() {
       provider,
       apiKey,
     }: {
-      provider: 'anthropic' | 'openai';
+      provider: LLMProvider;
       apiKey: string;
     }) => settingsApi.validateKey(provider, apiKey),
   });

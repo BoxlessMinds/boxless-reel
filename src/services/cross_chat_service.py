@@ -115,7 +115,7 @@ class CrossChatService:
         if not self.config.is_enabled:
             raise AgentNotAvailableError(
                 "Agent features require an LLM API key. "
-                "Set ANTHROPIC_API_KEY or OPENAI_API_KEY."
+                "Set ANTHROPIC_API_KEY, OPENAI_API_KEY or OPENROUTER_API_KEY."
             )
 
     def create_session(

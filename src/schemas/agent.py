@@ -11,16 +11,16 @@ class CreateSessionRequest(BaseModel):
 
     model_provider: str | None = Field(
         default=None,
-        description="LLM provider: 'anthropic' or 'openai'. Defaults to configured provider.",
+        description="LLM provider: 'anthropic', 'openai' or 'openrouter'. Defaults to configured provider.",
     )
 
     @field_validator("model_provider")
     @classmethod
     def validate_model_provider(cls, v: str | None) -> str | None:
         """Validate that model_provider is a supported value."""
-        if v is not None and v not in ("anthropic", "openai"):
+        if v is not None and v not in ("anthropic", "openai", "openrouter"):
             raise ValueError(
-                "Invalid model provider. Must be 'anthropic' or 'openai'."
+                "Invalid model provider. Must be 'anthropic', 'openai' or 'openrouter'."
             )
         return v
 

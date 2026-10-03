@@ -418,7 +418,7 @@ class TestTranscriptKnowledgeBase:
         assert kb._chunker.chunk_size == mock_config.chunk_size
         assert kb._chunker.chunk_overlap == mock_config.chunk_overlap
 
-    @patch("src.agents.knowledge.transcript_knowledge._create_embedding_function")
+    @patch("src.agents.knowledge.transcript_knowledge.create_embedding_function")
     def test_db_connection_lazy_init(
         self,
         mock_create_embedding: MagicMock,
@@ -456,7 +456,7 @@ class TestTranscriptKnowledgeBase:
 
         assert kb.clear("nonexistent-id") == 0
 
-    @patch("src.agents.knowledge.transcript_knowledge._create_embedding_function")
+    @patch("src.agents.knowledge.transcript_knowledge.create_embedding_function")
     def test_search_returns_empty_for_missing_table(
         self,
         mock_create_embedding: MagicMock,

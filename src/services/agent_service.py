@@ -230,7 +230,7 @@ class AgentService:
         if not self.is_available:
             raise AgentNotAvailableError(
                 "Agent features require an LLM API key. "
-                "Set ANTHROPIC_API_KEY or OPENAI_API_KEY."
+                "Set ANTHROPIC_API_KEY, OPENAI_API_KEY or OPENROUTER_API_KEY."
             )
 
     def _get_transcript_or_raise(self, transcript_id: str, user_id: str):

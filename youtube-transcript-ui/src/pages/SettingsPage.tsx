@@ -15,7 +15,13 @@ import { toast } from "sonner";
 import { useSettingsContext } from "@/contexts/SettingsContext";
 import { useValidateApiKey } from "@/hooks/useSettings";
 import { useYoutubeAuthStatus, useConnectYoutube, useDisconnectYoutube } from "@/hooks/useYoutubeAuth";
-import type { LLMSettingsUpdate } from "@/api/types";
+import type { LLMProvider, LLMSettingsUpdate } from "@/api/types";
+
+const PROVIDER_LABELS: Record<LLMProvider, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+};
 
 export default function SettingsPage() {
   const { settings, isLoading, updateSettings } = useSettingsContext();
@@ -57,9 +63,11 @@ export default function SettingsPage() {
   // Form state
   const [anthropicKey, setAnthropicKey] = useState("");
   const [openaiKey, setOpenaiKey] = useState("");
+  const [openrouterKey, setOpenrouterKey] = useState("");
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [showOpenaiKey, setShowOpenaiKey] = useState(false);
-  const [defaultProvider, setDefaultProvider] = useState<"anthropic" | "openai">("anthropic");
+  const [showOpenrouterKey, setShowOpenrouterKey] = useState(false);
+  const [defaultProvider, setDefaultProvider] = useState<LLMProvider>("anthropic");
   const [defaultModel, setDefaultModel] = useState("claude-sonnet-4-5");
   const [maxContextChunks, setMaxContextChunks] = useState(10);
   const [chunkSize, setChunkSize] = useState(1000);
@@ -74,6 +82,7 @@ export default function SettingsPage() {
   // Validation state
   const [anthropicValid, setAnthropicValid] = useState<boolean | null>(null);
   const [openaiValid, setOpenaiValid] = useState<boolean | null>(null);
+  const [openrouterValid, setOpenrouterValid] = useState<boolean | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   // Initialize form from settings
@@ -90,7 +99,7 @@ export default function SettingsPage() {
   }, [settings]);
 
   // Get models for selected provider
-  const getModelsForProvider = (provider: "anthropic" | "openai") => {
+  const getModelsForProvider = (provider: LLMProvider) => {
     const providerModels = settings?.available_models.find(p => p.provider === provider);
     return providerModels?.models || [];
   };
@@ -103,8 +112,9 @@ export default function SettingsPage() {
     }
   }, [defaultProvider]);
 
-  const handleValidateKey = async (provider: "anthropic" | "openai") => {
-    const key = provider === "anthropic" ? anthropicKey : openaiKey;
+  const handleValidateKey = async (provider: LLMProvider) => {
+    const key = { anthropic: anthropicKey, openai: openaiKey, openrouter: openrouterKey }[provider];
+    const setValid = { anthropic: setAnthropicValid, openai: setOpenaiValid, openrouter: setOpenrouterValid }[provider];
     if (!key) {
       toast.error("Please enter an API key to validate");
       return;
@@ -112,19 +122,10 @@ export default function SettingsPage() {
 
     try {
       const result = await validateKeyMutation.mutateAsync({ provider, apiKey: key });
+      setValid(result.valid);
       if (result.valid) {
-        if (provider === "anthropic") {
-          setAnthropicValid(true);
-        } else {
-          setOpenaiValid(true);
-        }
-        toast.success(`${provider === "anthropic" ? "Anthropic" : "OpenAI"} API key is valid`);
+        toast.success(`${PROVIDER_LABELS[provider]} API key is valid`);
       } else {
-        if (provider === "anthropic") {
-          setAnthropicValid(false);
-        } else {
-          setOpenaiValid(false);
-        }
         toast.error(result.error || "API key validation failed");
       }
     } catch {
@@ -152,6 +153,9 @@ export default function SettingsPage() {
       if (openaiKey) {
         update.openai_api_key = openaiKey;
       }
+      if (openrouterKey) {
+        update.openrouter_api_key = openrouterKey;
+      }
       if (tavilyKey) {
         update.tavily_api_key = tavilyKey;
       }
@@ -162,9 +166,11 @@ export default function SettingsPage() {
       // Clear the key inputs after save
       setAnthropicKey("");
       setOpenaiKey("");
+      setOpenrouterKey("");
       setTavilyKey("");
       setAnthropicValid(null);
       setOpenaiValid(null);
+      setOpenrouterValid(null);
     } catch {
       toast.error("Failed to save settings");
     } finally {
@@ -256,7 +262,7 @@ export default function SettingsPage() {
               LLM Providers
             </CardTitle>
             <CardDescription>
-              Configure your API keys for Anthropic and OpenAI. Keys are encrypted before storage.
+              Configure your API keys for Anthropic, OpenAI and OpenRouter. Keys are encrypted before storage.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -363,6 +369,59 @@ export default function SettingsPage() {
                 </Button>
               </div>
             </div>
+
+            <Separator />
+
+            {/* OpenRouter */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="openrouter-key" className="text-base font-medium">
+                  OpenRouter API Key
+                </Label>
+                {settings?.openrouter_api_key_configured && (
+                  <Badge variant="secondary" className="bg-green-100 text-green-800">
+                    Configured
+                  </Badge>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    id="openrouter-key"
+                    type={showOpenrouterKey ? "text" : "password"}
+                    placeholder={settings?.openrouter_api_key_configured ? "Enter new key to update..." : "sk-or-..."}
+                    value={openrouterKey}
+                    onChange={(e) => {
+                      setOpenrouterKey(e.target.value);
+                      setOpenrouterValid(null);
+                    }}
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowOpenrouterKey(!showOpenrouterKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showOpenrouterKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => handleValidateKey("openrouter")}
+                  disabled={!openrouterKey || validateKeyMutation.isPending}
+                >
+                  {validateKeyMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : openrouterValid === true ? (
+                    <Check className="h-4 w-4 text-green-600" />
+                  ) : openrouterValid === false ? (
+                    <X className="h-4 w-4 text-red-600" />
+                  ) : (
+                    "Validate"
+                  )}
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -383,7 +442,7 @@ export default function SettingsPage() {
                 <Label htmlFor="default-provider">Default Provider</Label>
                 <Select
                   value={defaultProvider}
-                  onValueChange={(value: "anthropic" | "openai") => setDefaultProvider(value)}
+                  onValueChange={(value: LLMProvider) => setDefaultProvider(value)}
                 >
                   <SelectTrigger id="default-provider">
                     <SelectValue />
@@ -391,6 +450,7 @@ export default function SettingsPage() {
                   <SelectContent>
                     <SelectItem value="anthropic">Anthropic</SelectItem>
                     <SelectItem value="openai">OpenAI</SelectItem>
+                    <SelectItem value="openrouter">OpenRouter</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

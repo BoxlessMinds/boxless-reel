@@ -145,15 +145,18 @@ export interface ApiErrorResponse {
 }
 
 // Settings types
+export type LLMProvider = 'anthropic' | 'openai' | 'openrouter';
+
 export interface ProviderModels {
-  provider: 'anthropic' | 'openai';
+  provider: LLMProvider;
   models: string[];
 }
 
 export interface LLMSettings {
   anthropic_api_key_configured: boolean;
   openai_api_key_configured: boolean;
-  default_provider: 'anthropic' | 'openai';
+  openrouter_api_key_configured: boolean;
+  default_provider: LLMProvider;
   default_model: string;
   available_providers: string[];
   available_models: ProviderModels[];
@@ -169,7 +172,8 @@ export interface LLMSettings {
 export interface LLMSettingsUpdate {
   anthropic_api_key?: string;
   openai_api_key?: string;
-  default_provider?: 'anthropic' | 'openai';
+  openrouter_api_key?: string;
+  default_provider?: LLMProvider;
   default_model?: string;
   embedding_model?: string;
   max_context_chunks?: number;
@@ -181,7 +185,7 @@ export interface LLMSettingsUpdate {
 }
 
 export interface ValidateKeyRequest {
-  provider: 'anthropic' | 'openai';
+  provider: LLMProvider;
   api_key: string;
 }
 

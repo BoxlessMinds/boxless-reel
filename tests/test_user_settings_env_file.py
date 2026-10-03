@@ -236,7 +236,7 @@ class TestFallback:
         keys = set(service.get_all_effective_values(test_user.id))
 
         assert keys == set(SettingsService.DEFAULTS) | set(SettingsService.SETTINGS_FIELD_MAP)
-        assert len(keys) == 11
+        assert len(keys) == 12
 
     def test_unmapped_key_falls_back_to_the_defaults_table(
         self, test_db: Session, test_user: User, monkeypatch: pytest.MonkeyPatch
