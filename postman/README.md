@@ -103,6 +103,31 @@ send, and set it back afterwards.
   YouTube (a plan is a dry run): `create`, `dedupe`, `purge_unavailable` (mode
   `deleted`, no enrich), `purge_watched`, `move`, `reorder`, and `add_url` with
   individual video URLs.
+- Postman uses the variable's **Current value**, not its Initial value. If the console
+  still says a request was skipped because `allow_live` is not `"true"`, check the
+  Current value, save the environment, and make sure it is the selected one.
+
+### Connecting Google from Postman
+
+**OAuth Callback** needs a one-time `code` from Google's consent screen, and that code
+works only once. After you approve consent, Google sends the browser to
+`GOOGLE_OAUTH_REDIRECT_URI`, which by default is this API's own callback on port 8001.
+If the server is running at that moment, the browser completes the connection itself
+and uses up the code, so Postman's request then fails. To send the callback from
+Postman instead:
+
+1. Send **YouTube Auth → Get Connect URL** and copy `authorization_url`.
+2. Stop the server (Ctrl+C).
+3. Open the URL in a browser and approve consent. The browser lands on a
+   "can't connect" page; that's expected.
+4. Copy the value of `code=` from the address bar (up to the next `&`) into
+   `google_auth_code`. The `%2F` in it can stay as it is.
+5. Start the server again, with the same settings.
+6. Send **[LIVE] OAuth Callback**. It returns 307 and redirects to the settings page.
+
+The connect link and the code both expire after about 10 minutes, so do steps 1–6 in
+one go. Restarting the server doesn't log you out, but access tokens still expire after
+15 minutes: if Get Connect URL returns 401, send **Login** first.
 
 ## Chaining and skipped requests
 
