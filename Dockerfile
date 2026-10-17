@@ -4,7 +4,7 @@
 # =============================================================================
 # Stage 1: Build stage with uv
 # =============================================================================
-FROM python:3.11-slim AS builder
+FROM python:3.14-slim AS builder
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:0.9.11 /uv /uvx /bin/
@@ -21,7 +21,7 @@ RUN uv sync --frozen --no-dev --no-install-project --extra agents
 # =============================================================================
 # Stage 2: Runtime stage
 # =============================================================================
-FROM python:3.11-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 # Install curl for healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends curl ffmpeg \
